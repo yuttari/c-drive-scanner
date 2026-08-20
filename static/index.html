@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>C 盘文件夹扫描工具</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>C 盘文件夹扫描工具</h1>
+    <div class="controls">
+      <input id="path" type="text" value="C:\Users\12706" placeholder="输入文件夹路径" />
+      <button id="scan">扫描</button>
+      <button id="showTree" class="view-btn active">目录树</button>
+      <button id="showReport" class="view-btn" disabled>查看报告</button>
+      <input id="search" type="text" placeholder="搜索文件夹名…" />
+      <select id="filter">
+        <option value="all">全部</option>
+        <option value="ai">🤖 AI 识别（大文件夹）</option>
+        <option value="safe">🟢 可直接删</option>
+        <option value="software_clean">🔵 软件内清</option>
+        <option value="confirm">🟡 需确认</option>
+        <option value="never">🔴 禁止删</option>
+        <option value="unknown">⚪ 未收录</option>
+      </select>
+    </div>
+    <p class="hint">只读扫描，不删除任何文件。扫描完成后点「查看报告」，按文件夹列表查看每个文件夹是干什么的、有多大、能不能清理。</p>
+  </header>
+
+  <main>
+    <section class="log-panel">
+      <div class="panel-title">实时扫描日志 <span id="status" class="status"></span></div>
+      <div id="log"></div>
+    </section>
+
+    <section class="tree-panel view" id="treePanel">
+      <div class="panel-title">目录树（点击 ▸ 展开）</div>
+      <div id="tree"></div>
+    </section>
+
+    <section class="report-panel view" id="reportPanel" style="display:none;">
+      <div class="panel-title">扫描报告 · 文件夹列表</div>
+      <div id="reportSummary" class="report-summary"></div>
+      <div id="report"></div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

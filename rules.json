@@ -1,0 +1,32 @@
+{
+  "protected": [
+    "NTUSER", ".ssh", ".gitconfig", ".docker", ".ollama",
+    "Windows", "Program Files", "ProgramData",
+    "AppData\\Local\\Programs", ".workbuddy\\binaries", ".workbuddy\\plugins"
+  ],
+  "rules": [
+    {"match": "AppData\\Local\\Docker\\wsl", "match_type": "path", "category": "software_clean", "description": "Docker Desktop 的 WSL 虚拟磁盘镜像（ext4.vhdx）", "advice": "用 docker system prune -a --volumes 清理，关闭 Docker 后压缩磁盘，勿直接删文件"},
+    {"match": "AppData\\Local\\JianyingPro", "match_type": "path", "category": "software_clean", "description": "剪映（CapCut）程序、草稿与缓存", "advice": "删旧版本安装包 + 缓存管理清理，勿删整个目录"},
+    {"match": "AppData\\Roaming\\Tencent", "match_type": "path", "category": "confirm", "description": "微信 / 企业微信 / QQ 的聊天数据、图片、文件", "advice": "含重要个人数据，用软件内置“存储空间”清理缓存，勿直接删目录"},
+    {"match": "WeChat Files", "match_type": "path", "category": "confirm", "description": "微信接收的文件、图片、视频", "advice": "用微信内置管理清理，确认无用再删"},
+    {"match": "WXWork", "match_type": "path", "category": "confirm", "description": "企业微信文件数据", "advice": "用企业微信内置存储管理清理"},
+    {"match": ".cache\\huggingface", "match_type": "path", "category": "safe", "description": "HuggingFace 开源模型缓存（DeepSeek-OCR 等）", "advice": "近期不用可整目录删除，需要时重新下载"},
+    {"match": ".cache\\modelscope", "match_type": "path", "category": "safe", "description": "ModelScope 模型缓存", "advice": "不用可删，需时重下"},
+    {"match": ".cache\\whisper", "match_type": "path", "category": "safe", "description": "本地语音识别 Whisper 模型", "advice": "不用本地语音识别可删"},
+    {"match": "ms-playwright", "match_type": "path", "category": "safe", "description": "Playwright 自动化测试浏览器二进制", "advice": "删后运行时会自动重新下载"},
+    {"match": "puppeteer", "match_type": "path", "category": "safe", "description": "Puppeteer 浏览器缓存", "advice": "可删，需时重下"},
+    {"match": "selenium", "match_type": "path", "category": "safe", "description": "Selenium 浏览器缓存", "advice": "可删"},
+    {"match": "AppData\\Local\\Temp", "match_type": "path", "category": "safe", "description": "系统与软件运行临时文件", "advice": "可直接删除，会自动重建"},
+    {"match": "pip", "match_type": "name", "category": "safe", "description": "Python 包下载缓存（pip cache）", "advice": "pip cache purge 清理"},
+    {"match": "npm-cache", "match_type": "name", "category": "safe", "description": "Node.js 包缓存", "advice": "npm cache clean --force"},
+    {"match": "AppData\\Roaming\\LarkShell", "match_type": "path", "category": "software_clean", "description": "飞书（Lark）软件数据 / 缓存", "advice": "飞书设置 → 存储空间 → 清理缓存"},
+    {"match": "AppData\\Roaming\\TRAE", "match_type": "path", "category": "software_clean", "description": "Trae 编辑器程序数据", "advice": "清理会重置编辑器，谨慎"},
+    {"match": "AppData\\Roaming\\kingsoft", "match_type": "path", "category": "software_clean", "description": "WPS 备份与缓存", "advice": "WPS 备份中心清理备份文件"},
+    {"match": "AppData\\Local\\Axure", "match_type": "path", "category": "software_clean", "description": "Axure 软件程序 / 历史版本", "advice": "不用可在控制面板卸载"},
+    {"match": ".workbuddy", "match_type": "path", "category": "never", "description": "WorkBuddy 程序本体", "advice": "删除软件无法运行"},
+    {"match": "AppData\\Local\\Programs", "match_type": "path", "category": "never", "description": "已安装软件本体（Python、VS Code、Trae 等）", "advice": "删了软件会坏"},
+    {"match": ".mp4", "match_type": "endswith", "category": "confirm", "description": "视频文件（录制 / 下载）", "advice": "个人视频，确认无用再删"},
+    {"match": ".log", "match_type": "endswith", "category": "safe", "description": "日志文件", "advice": "一般可删，不影响运行"},
+    {"match": ".tmp", "match_type": "endswith", "category": "safe", "description": "临时文件", "advice": "可直接删除"}
+  ]
+}

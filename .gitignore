@@ -1,0 +1,10 @@
+.env
+cache.json
+__pycache__/
+*.pyc
+venv/
+# 隐私/运行时数据：不要上传个人电脑扫描结果和日志
+reports/
+*.log
+server*.log
+.workbuddy/
