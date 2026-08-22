@@ -238,7 +238,7 @@ function startScan(force) {
       }
       pushLog('⏳ 扫描已开始，日志实时刷新（最新在上）…');
       poll();                       // 立即拉一次，避免等 500ms
-      pollTimer = setInterval(poll, 500);
+      pollTimer = setInterval(poll, 1000);
     })
     .catch(e => { pushLog('❌ 请求失败：' + e); setStatus('错误', 'err'); });
 }
@@ -257,14 +257,19 @@ function poll() {
         if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
         return;
       }
-      if (s.scanning) {
-        setStatus('扫描中… 已扫 ' + s.progress.dirs + ' 个目录', 'busy');
-      } else if (s.done) {
-        setStatus('扫描完成 ✓', 'ok');
+      // 关键：done（目录树已可看）优先于 scanning 判断。
+      // 后端在"主体扫描完成"即置 done=true，但 AI 分析阶段 scanning 仍为 true；
+      // 若先看 scanning，前端会一直停在"扫描中"转圈，体感就是"扫完了还在不断扫"。
+      if (s.done) {
+        setStatus(s.scanning ? '扫描完成 ✓（AI 分析后台进行中…）' : '扫描完成 ✓', 'ok');
         if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
         // 扫描完成只拉取并渲染一次目录树；之后绝不轮询/重渲染，避免卡顿
         if (!treeRendered) fetchTree();
         else pushLog('✅ 扫描完成（目录树已渲染，无需重复刷新）。');
+        return;
+      }
+      if (s.scanning) {
+        setStatus('扫描中… 已扫 ' + s.progress.dirs + ' 个目录', 'busy');
       } else {
         setStatus('空闲', '');
       }
@@ -313,33 +318,43 @@ function recoverTree() {
 }
 
 // 日志改为「最新在上」倒序展示 + 缓冲限流，避免一次性插入数万行 DOM 卡死页面。
+// 日志区核心原则：绝不整体重建 DOM。扫描中每批新日志只增量插入，避免每 500ms 重排上千节点导致卡死。
 function pushLog(line) {
   logLines.push(line);
   if (logLines.length > MAX_LOG_RENDER) logLines = logLines.slice(-MAX_LOG_RENDER);
-  renderLog();
+  appendLogLine(line, false);
 }
 
 function appendLogs(newLines, skipped) {
+  // 增量插入：只把“新来的”日志节点追加到顶部，不重建已有节点
   if (skipped && skipped > 0) {
-    logLines.push(`…（扫描日志较多，已折叠更早的 ${skipped} 条，仅展示最近部分）`);
+    const note = `…（扫描日志较多，已折叠更早的 ${skipped} 条，仅展示最近部分）`;
+    appendLogLine(note, true);
   }
-  for (let i = 0; i < newLines.length; i++) logLines.push(newLines[i]);
-  if (logLines.length > MAX_LOG_RENDER) logLines = logLines.slice(-MAX_LOG_RENDER);
-  renderLog();
+  for (let i = 0; i < newLines.length; i++) appendLogLine(newLines[i], false);
+  // 若日志节点超过上限， quietly 裁剪最早的（从底部移除），不整体重排
+  while (logEl.childElementCount > MAX_LOG_RENDER) {
+    logEl.removeChild(logEl.lastElementChild);
+  }
 }
 
+// 单条日志增量插入：最新显示在顶部（prepend）
+function appendLogLine(text, isNote) {
+  const d = document.createElement('div');
+  d.className = 'log-line' + (isNote ? ' log-note' : '');
+  d.textContent = text;
+  logEl.insertBefore(d, logEl.firstChild);
+}
+
+// 全量重建仅用于“清空/初始化”（startScan 时调用一次），平时绝不使用
 function renderLog() {
-  const frag = document.createDocumentFragment();
-  // 倒序：数组末尾是最新日志，从后往前渲染 -> 最新显示在顶部
+  logEl.replaceChildren();
   for (let i = logLines.length - 1; i >= 0; i--) {
-    const t = logLines[i];
     const d = document.createElement('div');
-    d.className = 'log-line' + (t.startsWith('…（') ? ' log-note' : '');
-    d.textContent = t;
-    frag.appendChild(d);
+    d.className = 'log-line' + (logLines[i].startsWith('…（') ? ' log-note' : '');
+    d.textContent = logLines[i];
+    logEl.appendChild(d);
   }
-  logEl.replaceChildren(frag);
-  logEl.scrollTop = 0; // 最新在顶部，无需滚动即可看到扫描动态
 }
 
 function fetchTree() {
