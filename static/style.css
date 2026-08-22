@@ -141,11 +141,12 @@ main { display: flex; gap: 16px; padding: 16px 20px; align-items: flex-start; }
 .report-item.cat-never { border-left-color: #d93026; background: #fff7f7; }
 .report-item.cat-unknown { border-left-color: #86909c; background: #fafafa; }
 .report-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.copy-btn {
-  margin-left: auto; border: 1px solid #d0d3d9; background: #fff; color: #3370ff;
+.open-btn {
+  margin-left: auto; border: 1px solid #d0d3d9; background: #fff; color: #4e5969;
   font-size: 12px; padding: 3px 9px; border-radius: 6px; cursor: pointer; white-space: nowrap;
 }
-.copy-btn:hover { background: #f0f5ff; }
+.open-btn:hover { background: #f2f3f5; }
+.open-btn:disabled { opacity: .6; cursor: progress; }
 .report-icon { font-size: 15px; }
 .report-name { font-weight: 600; word-break: break-all; }
 .report-size { color: #4e5969; font-variant-numeric: tabular-nums; min-width: 76px; }

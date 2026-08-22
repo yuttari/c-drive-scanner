@@ -66,14 +66,12 @@ h1 { font-size: 20px; margin: 8px 0 4px; }
 }
 .controls input { flex: 1; min-width: 200px; }
 .open-btn {
-  margin-left: 6px; border: 1px solid #d0d3d9; background: #fff; color: #3370ff;
+  margin-left: 6px; border: 1px solid #d0d3d9; background: #fff; color: #4e5969;
   font-size: 12px; padding: 3px 9px; border-radius: 6px; cursor: pointer; white-space: nowrap;
 }
-.open-btn:hover { background: #f0f5ff; }
+.open-btn:hover { background: #f2f3f5; }
 .open-btn:disabled { opacity: .6; cursor: progress; }
 .open-btn.sm { margin-left: 6px; padding: 1px 6px; font-size: 11px; }
-.copy-btn:hover { background: #f0f5ff; }
-.copy-btn.sm { margin-left: 6px; padding: 1px 6px; font-size: 11px; }
 .ai-analyze-btn {
   margin-left: 6px; border: 1px solid #d0d3d9; background: #f6f3ff; color: #7c3aed;
   font-size: 12px; padding: 3px 9px; border-radius: 6px; cursor: pointer; white-space: nowrap;
