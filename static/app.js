@@ -11,6 +11,14 @@ const reportPanel = document.getElementById('reportPanel');
 const searchInput = document.getElementById('search');
 const filterSel = document.getElementById('filter');
 const statusEl = document.getElementById('status');
+// —— 入口 Key 校验弹窗元素 ——
+const keyGate = document.getElementById('keyGate');
+const appRoot = document.getElementById('appRoot');
+const keyInput = document.getElementById('keyInput');
+const keySubmit = document.getElementById('keySubmit');
+const keySkip = document.getElementById('keySkip');
+const keyError = document.getElementById('keyError');
+const keyTesting = document.getElementById('keyTesting');
 let treeData = null;
 let logOffset = 0;
 let pollTimer = null;
@@ -18,6 +26,71 @@ let logLines = [];          // 前端日志缓冲（仅用于渲染，最多保�
 const MAX_LOG_RENDER = 1000;
 let reportCount = 0;        // 报告渲染计数器（用于限流）
 const REPORT_MAX = 5000;
+
+/* ============ 入口 Key 校验：无可用 Key 先弹窗，测试通过才进入功能界面 ============ */
+function showKeyGate() {
+  keyGate.style.display = 'flex';
+  appRoot.style.display = 'none';
+  keyError.style.display = 'none';
+  keyInput.focus();
+}
+
+function enterApp() {
+  keyGate.style.display = 'none';
+  appRoot.style.display = 'block';
+  recoverTree();   // 进入后恢复上次扫描结果（如有）
+}
+
+function showKeyError(msg) {
+  keyError.textContent = msg;
+  keyError.style.display = 'block';
+  keyTesting.style.display = 'none';
+  keySubmit.disabled = false;
+  keySkip.disabled = false;
+}
+
+function submitKey() {
+  const key = keyInput.value.trim();
+  if (!key) { showKeyError('请先填入 DeepSeek API Key'); return; }
+  keyError.style.display = 'none';
+  keyTesting.style.display = 'block';
+  keySubmit.disabled = true;
+  keySkip.disabled = true;
+  fetch('/api/set_key', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key })
+  })
+    .then(r => r.json().then(d => ({ status: r.status, d })))
+    .then(({ status, d }) => {
+      if (d && d.ok) { enterApp(); return; }
+      showKeyError(d && d.error ? d.error : ('测试失败（HTTP ' + status + '）'));
+    })
+    .catch(err => {
+      showKeyError('请求出错：' + err);
+    });
+}
+
+keySubmit.onclick = submitKey;
+keyInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitKey(); });
+keySkip.onclick = enterApp;   // 跳过：只用基础扫描（AI 按钮点击时后端会提示未启用）
+
+function checkKeyGate() {
+  fetch('/api/key_status')
+    .then(r => r.json())
+    .then(d => {
+      if (d && d.has_key) {
+        enterApp();          // 服务端已有可用 Key，直接进入
+      } else {
+        showKeyGate();       // 无 Key，弹窗
+      }
+    })
+    .catch(() => {
+      // 接口异常时仍可放行（避免卡死在弹窗），但默认给弹窗更稳妥——这里选择直接进，扫描不依赖 Key
+      enterApp();
+    });
+}
+
 
 const CAT_LABEL = {
   safe: '可直接删', software_clean: '软件内清',
@@ -100,8 +173,8 @@ scanBtn.onclick = startScan;
 showTreeBtn.onclick = () => switchView('tree');
 showReportBtn.onclick = () => switchView('report');
 
-// 页面加载即尝试恢复服务端已有的扫描结果（解决"刷新后目录树/报告变空白"）
-recoverTree();
+// 页面加载：先校验入口 Key（无可用 Key 弹窗，测试通过才进入功能界面并恢复上次结果）
+checkKeyGate();
 
 function switchView(view) {
   if (view === 'report') {

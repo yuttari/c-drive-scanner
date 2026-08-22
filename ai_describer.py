@@ -36,12 +36,17 @@ class AIDescriber:
         if self.enabled:
             try:
                 from openai import OpenAI
-                import httpx
                 # 支持代理：公司网络/防火墙环境下 Python 可能无法直连 api.deepseek.com，
                 # 可通过环境变量 DEEPSEEK_PROXY / HTTPS_PROXY / HTTP_PROXY 指定代理（http/https 均可）。
                 proxy = (proxy or os.getenv('DEEPSEEK_PROXY')
                          or os.getenv('HTTPS_PROXY') or os.getenv('HTTP_PROXY'))
-                http_client = httpx.Client(proxy=proxy) if proxy else None
+                http_client = None
+                if proxy:
+                    try:
+                        import httpx
+                        http_client = httpx.Client(proxy=proxy)
+                    except Exception:
+                        http_client = None
                 self.client = OpenAI(api_key=api_key, base_url=base_url,
                                      max_retries=max_retries, http_client=http_client)
                 self.model = model

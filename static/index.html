@@ -7,6 +7,26 @@
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
+  <!-- ===== 入口校验弹窗：无可用 DeepSeek Key 时强制弹出，测试通过才放行 ===== -->
+  <div id="keyGate" class="key-gate" style="display:none;">
+    <div class="key-card">
+      <h2>🔑 先配置 DeepSeek API Key</h2>
+      <p class="key-desc">本工具用 DeepSeek 帮你判断「文件夹是干什么的、能不能删、删除有啥影响」。<br/>
+        首次使用请填入你的 Key 并点「测试并进入」；也可以先跳过，只用基础扫描（不带 AI 说明）。</p>
+      <label class="key-label" for="keyInput">DeepSeek API Key</label>
+      <input id="keyInput" class="key-input" type="text" placeholder="sk-..." autocomplete="off" spellcheck="false" />
+      <div class="key-tip">Key 仅保存在本机 <code>.env</code> 文件，不会上传/打印。</div>
+      <div id="keyError" class="key-error" style="display:none;"></div>
+      <div class="key-actions">
+        <button id="keySkip" class="key-skip">先跳过（只用基础扫描）</button>
+        <button id="keySubmit" class="key-submit">测试并进入</button>
+      </div>
+      <div id="keyTesting" class="key-testing" style="display:none;">⏳ 正在测试 Key 连通性…</div>
+    </div>
+  </div>
+
+  <!-- ===== 主功能界面（校验通过后才显示） ===== -->
+  <div id="appRoot" style="display:none;">
   <header>
     <h1>C 盘文件夹扫描工具</h1>
     <div class="controls">
@@ -45,6 +65,7 @@
       <div id="report"></div>
     </section>
   </main>
+  </div>
 
   <script src="/static/app.js"></script>
 </body>

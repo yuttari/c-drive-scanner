@@ -60,6 +60,73 @@ AI = AIDescriber(
     threshold=2 * 1024 * 1024 * 1024,
 )
 
+
+def key_is_usable():
+    """判断服务端当前是否存在「看起来可用」的 DeepSeek Key。
+
+    仅做格式/非空判断（不主动联网校验，避免每次启动都打 API）；
+    真正的有效性由用户在前端「测试并进入」时联网验证。"""
+    k = (os.getenv('DEEPSEEK_API_KEY') or '').strip()
+    return bool(k) and k.lower() != 'your-key-here' and k.startswith('sk-')
+
+
+def test_deepseek_key(api_key, base_url):
+    """用一次轻量请求验证 Key 是否有效：调用 /v1/models（不消耗 token）。
+
+    成功返回 (True, None)；失败返回 (False, '可读错误')。"""
+    from openai import OpenAI
+    # 优先尝试带代理（公司网络场景）；若环境没有 httpx 则走默认客户端。
+    proxy = (os.getenv('DEEPSEEK_PROXY')
+             or os.getenv('HTTPS_PROXY') or os.getenv('HTTP_PROXY'))
+    client = None
+    if proxy:
+        try:
+            import httpx
+            client = OpenAI(api_key=api_key, base_url=base_url,
+                            max_retries=2, http_client=httpx.Client(proxy=proxy))
+        except Exception:
+            client = None
+    if client is None:
+        client = OpenAI(api_key=api_key, base_url=base_url, max_retries=2)
+    # /v1/models 不需消息、不打 token，仅验证鉴权与连通性
+    client.models.list()
+    return True, None
+
+
+def rebuild_ai_with_key(api_key, base_url):
+    """用新 Key 重建全局 AI 客户端（无需重启进程）。"""
+    global AI
+    AI = AIDescriber(
+        api_key=api_key,
+        base_url=base_url,
+        threshold=2 * 1024 * 1024 * 1024,
+    )
+    return AI.enabled
+
+
+def persist_deepseek_key(api_key):
+    """把 Key 写回 .env（更新已有 DEEPSEEK_API_KEY 行，没有则追加），不入库、不打印。"""
+    env_path = os.path.join(BASE, '.env')
+    lines = []
+    if os.path.exists(env_path):
+        with open(env_path, encoding='utf-8') as f:
+            lines = f.read().splitlines()
+    new_lines = []
+    replaced = False
+    for ln in lines:
+        if ln.strip().startswith('DEEPSEEK_API_KEY'):
+            new_lines.append(f'DEEPSEEK_API_KEY={api_key}')
+            replaced = True
+        else:
+            new_lines.append(ln)
+    if not replaced:
+        new_lines.append(f'DEEPSEEK_API_KEY={api_key}')
+    with open(env_path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(new_lines) + '\n')
+    # 同步到当前进程环境变量，避免后续读取不一致
+    os.environ['DEEPSEEK_API_KEY'] = api_key
+
+
 # ---- 全局扫描状态（单进程内共享）----
 logs = []                 # 扫描日志列表（字符串）
 logs_base = 0             # 已被滚动丢弃的最早日志条数（用于绝对偏移）
@@ -302,6 +369,58 @@ def api_analyze():
 @app.route('/api/health')
 def api_health():
     return jsonify({'ai_enabled': AI.enabled, 'ai_threshold_mb': AI.threshold // (1024 * 1024)})
+
+
+@app.route('/api/key_status')
+def api_key_status():
+    """前端入口网关：返回服务端当前是否有「看起来可用」的 DeepSeek Key。
+
+    has_key=True 时前端直接放行进入功能界面；
+    has_key=False 时前端弹出 Key 输入/测试弹窗，测试通过才放行。
+    """
+    return jsonify({'has_key': key_is_usable(), 'ai_enabled': AI.enabled})
+
+
+@app.route('/api/set_key', methods=['POST'])
+def api_set_key():
+    """接收前端提交的 DeepSeek Key，联网测试有效性；通过则写回 .env 并重建 AI 客户端。
+
+    请求体：{ key: 'sk-...' }，可选 base_url（默认 https://api.deepseek.com）
+    返回：{ ok: true } 或 { ok: false, error: '可读原因' }
+    """
+    raw = request.get_data(as_text=True)
+    data = {}
+    if raw:
+        try:
+            data = json.loads(raw)
+        except Exception:
+            data = {}
+    key = (data.get('key') or '').strip()
+    base_url = (data.get('base_url') or os.getenv('DEEPSEEK_BASE_URL') or 'https://api.deepseek.com').strip()
+    if not key:
+        return jsonify({'ok': False, 'error': '请先填入 DeepSeek API Key'}), 400
+    # 基础格式校验
+    if not key.startswith('sk-'):
+        return jsonify({'ok': False, 'error': 'Key 格式看起来不对（DeepSeek Key 一般以 sk- 开头）'}), 400
+    try:
+        ok, err = test_deepseek_key(key, base_url)
+    except Exception as e:
+        name = type(e).__name__
+        msg = str(e)
+        if 'Authentication' in msg or '401' in msg:
+            return jsonify({'ok': False, 'error': 'Key 无效或已过期（DeepSeek 返回鉴权失败）'})
+        if 'Connection' in name or 'Timeout' in name or 'Connect' in name:
+            return jsonify({'ok': False, 'error': '连接 DeepSeek 失败（网络/代理问题）。若公司网需代理，请在服务端 .env 加 DEEPSEEK_PROXY 后重试；也可能是 DeepSeek 临时不可用。'})
+        return jsonify({'ok': False, 'error': f'测试失败：{name} {msg[:160]}'})
+    if not ok:
+        return jsonify({'ok': False, 'error': err or '测试失败'})
+    # 测试通过：写回 .env + 重建客户端
+    try:
+        persist_deepseek_key(key)
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'Key 有效，但写入 .env 失败：{e}'}), 500
+    rebuild_ai_with_key(key, base_url)
+    return jsonify({'ok': True})
 
 
 @app.after_request
