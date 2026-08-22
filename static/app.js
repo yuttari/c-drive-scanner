@@ -387,12 +387,12 @@ function renderNode(node, isRoot) {
   badge.textContent = CAT_LABEL[node.category] || node.category;
   row.appendChild(badge);
 
-  // 「复制地址」按钮：一键复制该文件夹完整路径，便于去资源管理器定位/删除
+  // 「打开文件夹」按钮：调用服务端 /api/open，在本地资源管理器直接打开该路径
   const copyBtn = document.createElement('button');
-  copyBtn.className = 'copy-btn';
-  copyBtn.textContent = '📋 复制地址';
-  copyBtn.title = node.path || '';
-  copyBtn.onclick = () => copyPath(node.path || '', copyBtn);
+  copyBtn.className = 'open-btn';
+  copyBtn.textContent = '📂 打开文件夹';
+  copyBtn.title = '在本机资源管理器中打开此文件夹';
+  copyBtn.onclick = () => openFolder(node.path || '', copyBtn);
   row.appendChild(copyBtn);
 
   // 「🤖 AI分析」按钮：调用服务端 /api/analyze，分析用途 / 可否删除 / 删除影响
@@ -539,12 +539,12 @@ function renderReportNode(node, depth, container) {
     `<span class="badge cat-${node.category}">${CAT_ICON[node.category] || '⚪'} ${CAT_LABEL[node.category] || node.category}</span>`;
   item.appendChild(head);
 
-  // 「复制地址」按钮：一键复制该文件夹完整路径，便于去资源管理器定位/删除
+  // 「打开文件夹」按钮：调用服务端 /api/open，在本地资源管理器直接打开该路径
   const copyBtn = document.createElement('button');
-  copyBtn.className = 'copy-btn';
-  copyBtn.textContent = '📋 复制地址';
-  copyBtn.title = node.path || '';
-  copyBtn.onclick = () => copyPath(node.path || '', copyBtn);
+  copyBtn.className = 'open-btn';
+  copyBtn.textContent = '📂 打开文件夹';
+  copyBtn.title = '在本机资源管理器中打开此文件夹';
+  copyBtn.onclick = () => openFolder(node.path || '', copyBtn);
   head.appendChild(copyBtn);
 
   // 「🤖 AI分析」按钮：调用服务端 /api/analyze，分析该文件夹的用途 / 可否删除 / 删除影响
@@ -601,28 +601,33 @@ function escapeHtml(s) {
     .replace(/"/g, '&quot;');
 }
 
-// 一键复制文件夹完整路径（Clipboard API，失败回退 textarea+execCommand）
-function copyPath(text, btn) {
-  const done = () => {
-    const t = btn.textContent;
-    btn.textContent = '✅ 已复制';
-    setTimeout(() => { btn.textContent = t; }, 1200);
-  };
-  const fallback = () => {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.select();
-    try { document.execCommand('copy'); done(); } catch (e) {}
-    document.body.removeChild(ta);
-  };
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).then(done, fallback);
-  } else {
-    fallback();
-  }
+// 「打开文件夹」：调用服务端 /api/open，在本机资源管理器中直接打开该路径
+function openFolder(path, btn) {
+  if (!path) return;
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ 打开中…';
+  fetch('/api/open', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path })
+  })
+    .then(r => r.json().then(j => ({ ok: r.ok, j })))
+    .then(({ ok, j }) => {
+      if (ok && j.ok) {
+        btn.textContent = '✅ 已打开';
+      } else {
+        alert('打开失败：' + (j.error || '未知错误'));
+        btn.textContent = orig;
+      }
+    })
+    .catch(err => {
+      alert('打开请求出错：' + err);
+      btn.textContent = orig;
+    })
+    .finally(() => {
+      setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1500);
+    });
 }
 
 // 删除文件夹：二次确认（防误删）→ 调服务端 /api/delete（默认进回收站）→ 成功后从视图移除并刷新

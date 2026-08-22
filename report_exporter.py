@@ -65,10 +65,13 @@ h1 { font-size: 20px; margin: 8px 0 4px; }
   padding: 7px 10px; border: 1px solid #d0d3d9; border-radius: 6px; font-size: 13px;
 }
 .controls input { flex: 1; min-width: 200px; }
-.copy-btn {
-  margin-left: auto; border: 1px solid #d0d3d9; background: #fff; color: #3370ff;
+.open-btn {
+  margin-left: 6px; border: 1px solid #d0d3d9; background: #fff; color: #3370ff;
   font-size: 12px; padding: 3px 9px; border-radius: 6px; cursor: pointer; white-space: nowrap;
 }
+.open-btn:hover { background: #f0f5ff; }
+.open-btn:disabled { opacity: .6; cursor: progress; }
+.open-btn.sm { margin-left: 6px; padding: 1px 6px; font-size: 11px; }
 .copy-btn:hover { background: #f0f5ff; }
 .copy-btn.sm { margin-left: 6px; padding: 1px 6px; font-size: 11px; }
 .ai-analyze-btn {
@@ -112,17 +115,23 @@ function aiBlock(node){
     (node.deletable?'<div class="ai-line"><b>🗑 能否删除：</b>'+escapeHtml(node.deletable)+'</div>':'')+
     '</div>';
 }
-function copyPath(text, btn){
-  var done = function(){ var t=btn.textContent; btn.textContent='✅ 已复制'; setTimeout(function(){btn.textContent=t;},1200); };
-  var fb = function(){ var ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy'); done();}catch(e){} document.body.removeChild(ta); };
-  if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, fb); } else { fb(); }
+function openFolder(path, btn){
+  if(!path) return;
+  var orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ 打开中…';
+  fetch('/api/open', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({path:path}) })
+    .then(function(r){ return r.json().then(function(d){ return {ok:r.ok, d:d}; }); })
+    .then(function(o){ if(o.ok && o.d.ok){ btn.textContent='✅ 已打开'; } else { alert('打开失败：' + (o.d.error||'未知错误')); btn.textContent=orig; } })
+    .catch(function(err){ alert('打开请求失败：' + err); btn.textContent=orig; })
+    .finally(function(){ setTimeout(function(){ btn.disabled=false; btn.textContent=orig; }, 1200); });
 }
 document.addEventListener('click', function(e){
-  var btn = e.target && e.target.closest ? e.target.closest('.copy-btn') : null;
+  var btn = e.target && e.target.closest ? e.target.closest('.open-btn') : null;
   if(!btn) return;
   var item = btn.closest ? btn.closest('.report-item') : null;
   var path = btn.dataset.path || (item && item.dataset.path);
-  if(path) copyPath(path, btn);
+  if(path) openFolder(path, btn);
 });
 function aiResultBlock(r){
   r = r||{};
@@ -221,8 +230,10 @@ function renderReportNode(node, depth, container){
     '<span class="badge cat-'+node.category+'">'+(CAT_ICON[node.category]||'⚪')+' '+(CAT_LABEL[node.category]||node.category)+'</span>';
   item.appendChild(head);
   const cp = document.createElement('button');
-  cp.className = 'copy-btn';
-  cp.textContent = '📋 复制地址';
+  cp.className = 'open-btn';
+  cp.textContent = '📂 打开文件夹';
+  cp.title = '在本机资源管理器中打开此文件夹（需配合后端 /api/open 使用）';
+  cp.dataset.path = node.path || '';
   head.appendChild(cp);
   const ab = document.createElement('button');
   ab.className = 'ai-analyze-btn';
@@ -455,7 +466,7 @@ function renderTop(){
   const rows = DATA.top.map((r,i)=>
     '<tr><td>'+(i+1)+'</td><td class="sz">'+r.s+'</td><td>'+esc(r.n)+
     (r.d?' <span class="muted">'+esc(r.d)+'</span>':'')+'</td><td>'+badge(r.c)+'</td>'+
-    '<td class="muted" title="'+esc(r.p)+'">'+esc(r.p)+' <button class="copy-btn sm" data-path="'+esc(r.p)+'">📋</button><button class="ai-analyze-btn sm" data-path="'+esc(r.p)+'" data-name="'+esc(r.n)+'" data-size="'+esc(r.s)+'">🤖</button><button class="delete-btn sm" data-path="'+esc(r.p)+'">🗑</button></td></tr>').join('');
+    '<td class="muted" title="'+esc(r.p)+'">'+esc(r.p)+' <button class="open-btn sm" data-path="'+esc(r.p)+'">📂</button><button class="ai-analyze-btn sm" data-path="'+esc(r.p)+'" data-name="'+esc(r.n)+'" data-size="'+esc(r.s)+'">🤖</button><button class="delete-btn sm" data-path="'+esc(r.p)+'">🗑</button></td></tr>').join('');
   document.getElementById('topBody').innerHTML = rows;
 }
 function renderDescribed(){
@@ -474,7 +485,7 @@ function renderDescribed(){
       (r.a?'<div class="report-advice"><b>清理建议：</b>'+esc(r.a)+'</div>':'')+
       '<div class="muted" style="font-size:12px;margin-top:2px">'+esc(r.p)+'</div>';
     item.dataset.path = r.p;
-    (function(){ var h=item.querySelector('.report-head'); if(h){ var cp=document.createElement('button'); cp.className='copy-btn'; cp.textContent='📋 复制地址'; h.appendChild(cp); var ab2=document.createElement('button'); ab2.className='ai-analyze-btn'; ab2.textContent='🤖 AI分析'; ab2.dataset.path=r.p; ab2.dataset.name=r.n; ab2.dataset.size=r.s; h.appendChild(ab2); var del=document.createElement('button'); del.className='delete-btn'; del.textContent='🗑 删除'; del.dataset.path=r.p; h.appendChild(del); } })();
+    (function(){ var h=item.querySelector('.report-head'); if(h){ var cp=document.createElement('button'); cp.className='open-btn'; cp.textContent='📂 打开文件夹'; cp.title='在本机资源管理器中打开此文件夹'; cp.dataset.path=r.p; h.appendChild(cp); var ab2=document.createElement('button'); ab2.className='ai-analyze-btn'; ab2.textContent='🤖 AI分析'; ab2.dataset.path=r.p; ab2.dataset.name=r.n; ab2.dataset.size=r.s; h.appendChild(ab2); var del=document.createElement('button'); del.className='delete-btn'; del.textContent='🗑 删除'; del.dataset.path=r.p; h.appendChild(del); } })();
     list.appendChild(item);
   });
 }
@@ -502,7 +513,7 @@ function renderBigUnknown(){
       (su || r.software||r.purpose||r.deletable ? '<div class="ai-block">'+su+sw+pu+de+'</div>' : '')+
       '<div class="muted" style="font-size:12px;margin-top:2px">'+esc(r.p)+'</div>';
     item.dataset.path = r.p;
-    (function(){ var h=item.querySelector('.report-head'); if(h){ var cp=document.createElement('button'); cp.className='copy-btn'; cp.textContent='📋 复制地址'; h.appendChild(cp); var ab2=document.createElement('button'); ab2.className='ai-analyze-btn'; ab2.textContent='🤖 AI分析'; ab2.dataset.path=r.p; ab2.dataset.name=r.n; ab2.dataset.size=r.s; h.appendChild(ab2); var del=document.createElement('button'); del.className='delete-btn'; del.textContent='🗑 删除'; del.dataset.path=r.p; h.appendChild(del); } })();
+    (function(){ var h=item.querySelector('.report-head'); if(h){ var cp=document.createElement('button'); cp.className='open-btn'; cp.textContent='📂 打开文件夹'; cp.title='在本机资源管理器中打开此文件夹'; cp.dataset.path=r.p; h.appendChild(cp); var ab2=document.createElement('button'); ab2.className='ai-analyze-btn'; ab2.textContent='🤖 AI分析'; ab2.dataset.path=r.p; ab2.dataset.name=r.n; ab2.dataset.size=r.s; h.appendChild(ab2); var del=document.createElement('button'); del.className='delete-btn'; del.textContent='🗑 删除'; del.dataset.path=r.p; h.appendChild(del); } })();
     list.appendChild(item);
   });
 }
@@ -532,18 +543,24 @@ function applyFilter(){
     tr.style.display = (!q || txt.includes(q)) ? '' : 'none';
   });
 }
-function copyPath(text, btn){
-  var done = function(){ var t=btn.textContent; btn.textContent='✅ 已复制'; setTimeout(function(){btn.textContent=t;},1200); };
-  var fb = function(){ var ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy'); done();}catch(e){} document.body.removeChild(ta); };
-  if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, fb); } else { fb(); }
+function openFolder(path, btn){
+  if(!path) return;
+  var orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ 打开中…';
+  fetch('/api/open', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({path:path}) })
+    .then(function(r){ return r.json().then(function(d){ return {ok:r.ok, d:d}; }); })
+    .then(function(o){ if(o.ok && o.d.ok){ btn.textContent='✅ 已打开'; } else { alert('打开失败：' + (o.d.error||'未知错误')); btn.textContent=orig; } })
+    .catch(function(err){ alert('打开请求失败：' + err); btn.textContent=orig; })
+    .finally(function(){ setTimeout(function(){ btn.disabled=false; btn.textContent=orig; }, 1200); });
 }
 document.addEventListener('click', function(e){
   if(!e.target || !e.target.closest) return;
   var t = e.target;
-  var cp = t.closest('.copy-btn');
+  var cp = t.closest('.open-btn');
   if(cp){
     var ip = cp.getAttribute('data-path') || (cp.closest('.report-item') && cp.closest('.report-item').dataset.path) || (cp.closest('tr') && cp.closest('tr').dataset.path);
-    if(ip) copyPath(ip, cp);
+    if(ip) openFolder(ip, cp);
     return;
   }
   var ab = t.closest('.ai-analyze-btn');

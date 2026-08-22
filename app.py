@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import socket
+import subprocess
 import threading
 import time
 from flask import Flask, request, send_from_directory, jsonify, send_file
@@ -369,6 +370,48 @@ def api_analyze():
 @app.route('/api/health')
 def api_health():
     return jsonify({'ai_enabled': AI.enabled, 'ai_threshold_mb': AI.threshold // (1024 * 1024)})
+
+
+@app.route('/api/open', methods=['POST'])
+def api_open():
+    """在本地资源管理器中打开指定文件夹。
+
+    安全护栏：目标必须位于最近一次扫描的根目录之内（与删除同源限制），
+    不允许打开系统盘任意位置。命中保护名单时仍可打开（只读查看，不危险）。
+
+    请求体：{ path: '...' }
+    返回：{ ok: true } 或 { ok: false, error }
+    """
+    raw = request.get_data(as_text=True)
+    data = {}
+    if raw:
+        try:
+            data = json.loads(raw)
+        except Exception:
+            data = {}
+    path = (data.get('path') or '').strip()
+    if not path:
+        return jsonify({'ok': False, 'error': '缺少 path 参数'}), 400
+
+    root = _scan_root_path()
+    if not root:
+        return jsonify({'ok': False, 'error': '尚未扫描任何目录，无法确认范围。请先扫描。'}), 400
+    root_norm = os.path.abspath(root).rstrip('\\/').lower()
+    target_norm = os.path.abspath(path).rstrip('\\/').lower()
+    if not (target_norm == root_norm or target_norm.startswith(root_norm + '\\') or target_norm.startswith(root_norm + '/')):
+        return jsonify({'ok': False, 'error': '目标不在扫描根目录之内，出于安全已拒绝打开。'}), 400
+    if not os.path.exists(path):
+        return jsonify({'ok': False, 'error': '路径不存在：' + path}), 404
+
+    try:
+        # 文件夹用资源管理器打开；文件则打开其所在目录并选中该文件
+        if os.path.isdir(path):
+            os.startfile(path)
+        else:
+            subprocess.run(['explorer', '/select,', path], check=False)
+        return jsonify({'ok': True, 'path': path})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'打开失败：{type(e).__name__}: {e}'}), 500
 
 
 @app.route('/api/key_status')
