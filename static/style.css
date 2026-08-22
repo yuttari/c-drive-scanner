@@ -176,4 +176,10 @@ main { display: flex; gap: 16px; padding: 16px 20px; align-items: flex-start; }
 }
 .ai-analyze-btn:hover { background: #efeaff; }
 .ai-analyze-btn:disabled { opacity: .6; cursor: progress; }
+.delete-btn {
+  margin-left: 6px; border: 1px solid #ffb4ab; background: #fff; color: #d93026;
+  font-size: 12px; padding: 3px 9px; border-radius: 6px; cursor: pointer; white-space: nowrap;
+}
+.delete-btn:hover { background: #fde8e8; }
+.delete-btn:disabled { opacity: .6; cursor: progress; }
 .ai-result { width: 100%; margin: 6px 0 2px 24px; }

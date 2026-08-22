@@ -78,6 +78,13 @@ h1 { font-size: 20px; margin: 8px 0 4px; }
 .ai-analyze-btn:hover { background: #efeaff; }
 .ai-analyze-btn:disabled { opacity: .6; cursor: progress; }
 .ai-analyze-btn.sm { margin-left: 4px; padding: 1px 6px; font-size: 11px; }
+.delete-btn {
+  margin-left: 6px; border: 1px solid #ffb4ab; background: #fff; color: #d93026;
+  font-size: 12px; padding: 3px 9px; border-radius: 6px; cursor: pointer; white-space: nowrap;
+}
+.delete-btn:hover { background: #fde8e8; }
+.delete-btn:disabled { opacity: .6; cursor: progress; }
+.delete-btn.sm { margin-left: 4px; padding: 1px 6px; font-size: 11px; }
 .ai-result { margin-top: 6px; }
 .ds-key { flex: 1.3; min-width: 220px; }
 .ds-hint { font-size: 12px; color: #8a8f99; margin: 4px 0 14px; line-height: 1.6; }
@@ -225,6 +232,12 @@ function renderReportNode(node, depth, container){
   ab.dataset.name = node.name || '';
   ab.dataset.size = node.size_human || '';
   head.appendChild(ab);
+  const del = document.createElement('button');
+  del.className = 'delete-btn';
+  del.textContent = '🗑 删除';
+  del.title = '删除此文件夹（默认进回收站，可在回收站恢复）';
+  del.dataset.path = node.path || '';
+  head.appendChild(del);
   const desc = document.createElement('div');
   desc.className = 'report-desc';
   if(node.description){
@@ -442,7 +455,7 @@ function renderTop(){
   const rows = DATA.top.map((r,i)=>
     '<tr><td>'+(i+1)+'</td><td class="sz">'+r.s+'</td><td>'+esc(r.n)+
     (r.d?' <span class="muted">'+esc(r.d)+'</span>':'')+'</td><td>'+badge(r.c)+'</td>'+
-    '<td class="muted" title="'+esc(r.p)+'">'+esc(r.p)+' <button class="copy-btn sm" data-path="'+esc(r.p)+'">📋</button><button class="ai-analyze-btn sm" data-path="'+esc(r.p)+'" data-name="'+esc(r.n)+'" data-size="'+esc(r.s)+'">🤖</button></td></tr>').join('');
+    '<td class="muted" title="'+esc(r.p)+'">'+esc(r.p)+' <button class="copy-btn sm" data-path="'+esc(r.p)+'">📋</button><button class="ai-analyze-btn sm" data-path="'+esc(r.p)+'" data-name="'+esc(r.n)+'" data-size="'+esc(r.s)+'">🤖</button><button class="delete-btn sm" data-path="'+esc(r.p)+'">🗑</button></td></tr>').join('');
   document.getElementById('topBody').innerHTML = rows;
 }
 function renderDescribed(){
@@ -461,7 +474,7 @@ function renderDescribed(){
       (r.a?'<div class="report-advice"><b>清理建议：</b>'+esc(r.a)+'</div>':'')+
       '<div class="muted" style="font-size:12px;margin-top:2px">'+esc(r.p)+'</div>';
     item.dataset.path = r.p;
-    (function(){ var h=item.querySelector('.report-head'); if(h){ var cp=document.createElement('button'); cp.className='copy-btn'; cp.textContent='📋 复制地址'; h.appendChild(cp); var ab2=document.createElement('button'); ab2.className='ai-analyze-btn'; ab2.textContent='🤖 AI分析'; ab2.dataset.path=r.p; ab2.dataset.name=r.n; ab2.dataset.size=r.s; h.appendChild(ab2); } })();
+    (function(){ var h=item.querySelector('.report-head'); if(h){ var cp=document.createElement('button'); cp.className='copy-btn'; cp.textContent='📋 复制地址'; h.appendChild(cp); var ab2=document.createElement('button'); ab2.className='ai-analyze-btn'; ab2.textContent='🤖 AI分析'; ab2.dataset.path=r.p; ab2.dataset.name=r.n; ab2.dataset.size=r.s; h.appendChild(ab2); var del=document.createElement('button'); del.className='delete-btn'; del.textContent='🗑 删除'; del.dataset.path=r.p; h.appendChild(del); } })();
     list.appendChild(item);
   });
 }
@@ -489,7 +502,7 @@ function renderBigUnknown(){
       (su || r.software||r.purpose||r.deletable ? '<div class="ai-block">'+su+sw+pu+de+'</div>' : '')+
       '<div class="muted" style="font-size:12px;margin-top:2px">'+esc(r.p)+'</div>';
     item.dataset.path = r.p;
-    (function(){ var h=item.querySelector('.report-head'); if(h){ var cp=document.createElement('button'); cp.className='copy-btn'; cp.textContent='📋 复制地址'; h.appendChild(cp); var ab2=document.createElement('button'); ab2.className='ai-analyze-btn'; ab2.textContent='🤖 AI分析'; ab2.dataset.path=r.p; ab2.dataset.name=r.n; ab2.dataset.size=r.s; h.appendChild(ab2); } })();
+    (function(){ var h=item.querySelector('.report-head'); if(h){ var cp=document.createElement('button'); cp.className='copy-btn'; cp.textContent='📋 复制地址'; h.appendChild(cp); var ab2=document.createElement('button'); ab2.className='ai-analyze-btn'; ab2.textContent='🤖 AI分析'; ab2.dataset.path=r.p; ab2.dataset.name=r.n; ab2.dataset.size=r.s; h.appendChild(ab2); var del=document.createElement('button'); del.className='delete-btn'; del.textContent='🗑 删除'; del.dataset.path=r.p; h.appendChild(del); } })();
     list.appendChild(item);
   });
 }
@@ -542,7 +555,27 @@ document.addEventListener('click', function(e){
     }
     return;
   }
+  var db = t.closest('.delete-btn');
+  if(db){
+    var dp = db.getAttribute('data-path') || (db.closest('.report-item') && db.closest('.report-item').dataset.path);
+    if(dp) deleteFolderFromServer(dp, db);
+    return;
+  }
 });
+function deleteFolderFromServer(path, btn){
+  if(!path) return;
+  if(!confirm('⚠️ 即将删除文件夹：\\n'+path+'\\n\\n· 默认进入「回收站」，可在回收站恢复。\\n· 系统/关键目录已被保护，无法删。\\n· 确认删除？')) return;
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ 删除中…'; }
+  fetch('/api/delete', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({path:path})})
+    .then(function(r){ return r.json().then(function(d){ return {ok:r.ok, d:d}; }); })
+    .then(function(o){
+      if(!o.ok || !o.d.ok){ alert('删除失败：' + (o.d && o.d.error ? o.d.error : '未知错误')); if(btn){ btn.disabled=false; btn.textContent='🗑 删除'; } return; }
+      var item = btn.closest('.report-item');
+      if(item) item.remove();
+      alert('🗑 已删除（' + (o.d.method==='permanent'?'永久删除':'已进回收站') + '）：\\n' + path);
+    })
+    .catch(function(err){ alert('删除请求出错：' + err); if(btn){ btn.disabled=false; btn.textContent='🗑 删除'; } });
+}
 function aiResultBlock(r){
   r = r||{};
   var lv = r.level||'caution';

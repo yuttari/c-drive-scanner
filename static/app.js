@@ -403,6 +403,14 @@ function renderNode(node, isRoot) {
   aiBtn.onclick = () => analyzeFolder(node, aiBox, aiBtn);
   row.appendChild(aiBtn);
 
+  // 「🗑 删除」按钮：经服务端 /api/delete（默认进回收站）删除该文件夹，删后刷新视图
+  const delBtn = document.createElement('button');
+  delBtn.className = 'delete-btn';
+  delBtn.textContent = '🗑 删除';
+  delBtn.title = '删除此文件夹（默认进回收站，可在回收站恢复）';
+  delBtn.onclick = () => deleteFolder(node, wrap);
+  row.appendChild(delBtn);
+
   if (node.description) {
     const desc = document.createElement('div');
     desc.className = 'desc';
@@ -547,6 +555,14 @@ function renderReportNode(node, depth, container) {
   aiBtn.onclick = () => analyzeFolder(node, item, aiBtn);
   head.appendChild(aiBtn);
 
+  // 「🗑 删除」按钮：经服务端 /api/delete（默认进回收站）删除该文件夹，删后刷新视图
+  const delBtn = document.createElement('button');
+  delBtn.className = 'delete-btn';
+  delBtn.textContent = '🗑 删除';
+  delBtn.title = '删除此文件夹（默认进回收站，可在回收站恢复）';
+  delBtn.onclick = () => deleteFolder(node, item);
+  head.appendChild(delBtn);
+
   const desc = document.createElement('div');
   desc.className = 'report-desc';
   if (node.description) {
@@ -607,6 +623,64 @@ function copyPath(text, btn) {
   } else {
     fallback();
   }
+}
+
+// 删除文件夹：二次确认（防误删）→ 调服务端 /api/delete（默认进回收站）→ 成功后从视图移除并刷新
+function deleteFolder(node, itemEl) {
+  const path = node.path || '';
+  if (!path) return;
+  const ok = confirm(
+    '⚠️ 即将删除文件夹：\n' + path + '\n\n' +
+    '· 默认进入「回收站」，可在回收站恢复（若服务端无回收站支持则永久删除）。\n' +
+    '· 系统/关键目录已被保护，无法删。\n' +
+    '· 确认删除？'
+  );
+  if (!ok) return;
+  const delBtn = itemEl.querySelector('.delete-btn');
+  if (delBtn) { delBtn.disabled = true; delBtn.textContent = '⏳ 删除中…'; }
+  fetch('/api/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path })
+  })
+    .then(r => {
+      if (!r.headers.get('content-type') || !r.headers.get('content-type').includes('application/json')) {
+        return r.text().then(t => ({ ok: false, d: { error: '后端返回非 JSON（可能 /api/delete 不存在），请确认已重启最新版 app.py。响应前 200 字：' + t.slice(0, 200) } }));
+      }
+      return r.json().then(d => ({ ok: r.ok, d }));
+    })
+    .then(({ ok, d }) => {
+      if (!ok || !d.ok) {
+        alert('删除失败：' + (d && d.error ? d.error : '未知错误'));
+        if (delBtn) { delBtn.disabled = false; delBtn.textContent = '🗑 删除'; }
+        return;
+      }
+      // 从前端内存树移除该节点
+      removeNodeFromTree(treeData, path);
+      // 从 DOM 移除该节点所在的整块（目录树节点 wrap，或报告 item）
+      itemEl.remove();
+      pushLog('🗑 已删除：' + path + (d.method === 'permanent' ? '（永久删除）' : '（已进回收站）'));
+      setStatus('已删除 1 项', 'ok');
+    })
+    .catch(err => {
+      alert('删除请求出错：' + err);
+      if (delBtn) { delBtn.disabled = false; delBtn.textContent = '🗑 删除'; }
+    });
+}
+
+// 从前端内存树（treeData）递归移除指定路径节点，供后续刷新/报告一致
+function removeNodeFromTree(node, path) {
+  if (!node || !node.children) return false;
+  const target = path.replace('/', '\\').toLowerCase();
+  for (let i = 0; i < node.children.length; i++) {
+    const c = node.children[i];
+    if (c.path.replace('/', '\\').toLowerCase() === target) {
+      node.children.splice(i, 1);
+      return true;
+    }
+    if (removeNodeFromTree(c, path)) return true;
+  }
+  return false;
 }
 
 searchInput.oninput = applyFilter;

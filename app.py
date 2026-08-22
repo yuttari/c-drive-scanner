@@ -430,6 +430,112 @@ def _no_cache(resp):
     return resp
 
 
+# ---- 删除功能：仅允许删除「已扫描根目录之内」的路径，且拒绝保护名单 ----
+
+def _scan_root_path():
+    """返回最近一次扫描的根路径（用于限制删除范围，避免误删系统目录）。"""
+    return current_tree['path'] if current_tree else None
+
+
+def _is_protected(path):
+    """判断路径是否命中保护名单（系统关键目录 / rules.json 的 protected 列表）。"""
+    norm = path.replace('/', '\\').lower().rstrip('\\')
+    # 系统级绝对保护（无论扫描哪个根都不可删）
+    sys_protect = ['windows', 'program files', 'programdata', 'appdata',
+                   'ntuser', '.ssh', '.gitconfig', '.docker', '.ollama']
+    base = os.path.basename(norm)
+    for p in sys_protect:
+        if norm.endswith('\\' + p) or base == p:
+            return True
+    # rules.json 的 protected 列表
+    for p in getattr(KB, 'protected', []) or []:
+        pl = p.replace('/', '\\').lower()
+        if norm.endswith('\\' + pl) or base == pl:
+            return True
+    return False
+
+
+@app.route('/api/delete', methods=['POST'])
+def api_delete():
+    """删除一个文件夹或文件（默认进回收站，失败回退永久删除）。
+
+    安全护栏：
+    1. 目标路径必须在「最近一次扫描的根目录」之内（current_tree.path），
+       不允许删除根目录之外的任意路径（防误删系统盘）。
+    2. 命中保护名单（系统关键目录 / rules.json protected）直接拒绝。
+    3. 删除前服务端再次确认路径存在且为目录/文件。
+
+    请求体：{ path: '...' }
+    返回：{ ok: true, path, parent, method } 或 { ok: false, error }
+    """
+    raw = request.get_data(as_text=True)
+    data = {}
+    if raw:
+        try:
+            data = json.loads(raw)
+        except Exception:
+            data = {}
+    path = (data.get('path') or '').strip()
+    if not path:
+        return jsonify({'ok': False, 'error': '缺少 path 参数'}), 400
+
+    root = _scan_root_path()
+    if not root:
+        return jsonify({'ok': False, 'error': '尚未扫描任何目录，无法确认删除范围。请先扫描。'}), 400
+    # 规范化比较：目标必须是 root 的子路径（或就是 root 本身禁止删）
+    root_norm = os.path.abspath(root).rstrip('\\/').lower()
+    path_norm = os.path.abspath(path).rstrip('\\/').lower()
+    if path_norm == root_norm:
+        return jsonify({'ok': False, 'error': '不能删除正在扫描的根目录本身。'}), 400
+    if not (path_norm.startswith(root_norm + '\\') or path_norm.startswith(root_norm + '/')):
+        return jsonify({'ok': False, 'error': '目标不在已扫描目录范围内，出于安全拒绝删除。'}), 400
+    if _is_protected(path):
+        return jsonify({'ok': False, 'error': '该路径在保护名单中（系统/关键目录），禁止删除。'}), 400
+
+    if not os.path.exists(path):
+        return jsonify({'ok': False, 'error': '路径不存在：' + path}), 404
+
+    parent = os.path.dirname(path)
+    try:
+        method = 'recycle'
+        try:
+            import send2trash
+            send2trash.send2trash(path)
+        except ImportError:
+            # 无 send2trash：目录用 rmtree，文件用 remove（永久删除，已在前端二次确认）
+            if os.path.isdir(path):
+                import shutil
+                shutil.rmtree(path)
+            else:
+                os.remove(path)
+            method = 'permanent'
+        # 同时从服务端缓存的目录树中移除该节点，供前端刷新
+        _remove_from_tree(current_tree, path_norm)
+        return jsonify({'ok': True, 'path': path, 'parent': parent, 'method': method})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'删除失败：{type(e).__name__}: {e}'}), 500
+
+
+def _remove_from_tree(node, path_norm):
+    """从 current_tree 中递归移除指定路径的节点（用于删除后刷新视图）。"""
+    if not node or 'children' not in node:
+        return False
+    for i, c in enumerate(node['children']):
+        cn = os.path.abspath(c['path']).rstrip('\\/').lower()
+        if cn == path_norm:
+            node['children'].pop(i)
+            # 重新累加父节点大小
+            try:
+                node['size_bytes'] -= c.get('size_bytes', 0)
+                node['size_human'] = human_size(node['size_bytes'])
+            except Exception:
+                pass
+            return True
+        if _remove_from_tree(c, path_norm):
+            return True
+    return False
+
+
 if __name__ == '__main__':
     # 端口默认钉在 5001：5000 常被本机其它项目（如 knowledge-tree-app）占用，
     # 之前自动顺延到 5001 导致用户习惯的 5000 地址变成别的应用、看不到「扫描」按钮。
