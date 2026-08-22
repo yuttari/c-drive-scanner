@@ -127,6 +127,8 @@ main { display: flex; gap: 16px; padding: 16px 20px; align-items: flex-start; }
 .advice { width: 100%; color: #3370ff; font-size: 12px; padding-left: 24px; }
 .err { width: 100%; color: #d93026; font-size: 12px; padding-left: 24px; }
 .children { padding-left: 18px; }
+.placeholder-hint { color: #86909c; font-size: 12px; padding-left: 4px; margin-left: 6px; }
+.placeholder-hint:hover { color: #3370ff; text-decoration: underline; }
 
 /* ===== 报告视图 ===== */
 .report-summary { padding: 12px 14px; border-bottom: 1px solid #eef0f3; }

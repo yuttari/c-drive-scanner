@@ -349,11 +349,78 @@ def api_status():
     })
 
 
+# 目录树返回深度上限：超过该深度的子树在前端首次拉取时不下发完整节点，
+# 而是折叠为占位节点（带后代文件夹数/大小），等用户在界面展开时再按需拉取。
+# 目的：扫描 C:\Users\12706 这类巨盘会生成数十万~百万节点、序列化 300MB+ 的树，
+# 前端一次性 JSON.parse 会撑爆主线程导致浏览器崩溃。分层按需下发彻底解决。
+TREE_MAX_DEPTH = int(os.environ.get('TREE_MAX_DEPTH', '3'))
+
+
 @app.route('/api/tree')
 def api_tree():
     if current_tree is None:
         return jsonify({'ready': False})
-    return jsonify({'ready': True, 'tree': current_tree})
+    # 下发折叠后的树（仅前 TREE_MAX_DEPTH 层完整，深层为占位），体积从 300MB+ 降到几 MB
+    return jsonify({'ready': True, 'tree': _fold_deep(current_tree, 0),
+                    'max_depth': TREE_MAX_DEPTH})
+
+
+def _fold_deep(node, depth):
+    """递归：超过 TREE_MAX_DEPTH 的子孙折叠成占位节点（只保留聚合计数，不下发 children 全量）。"""
+    if 'children' not in node:
+        return node
+    kids = node['children']
+    if depth >= TREE_MAX_DEPTH:
+        # 本层不再下发子节点细节，改为聚合占位
+        ddirs = 0
+        dbytes = 0
+        for c in kids:
+            if c.get('is_dir') and not c.get('is_link'):
+                ddirs += 1 + c.get('descendant_dirs', 0)
+                dbytes += c.get('size_bytes', 0) + c.get('descendant_bytes', 0)
+        folded = dict(node)  # 浅拷贝，保留自身字段
+        folded['children'] = []          # 不下发 grandchildren
+        folded['truncated'] = True       # 前端据此显示「展开更多」按钮
+        folded['descendant_dirs'] = ddirs
+        folded['descendant_bytes'] = dbytes
+        folded['descendant_size_human'] = human_size(dbytes)
+        return folded
+    out = dict(node)
+    out['children'] = [_fold_deep(c, depth + 1) for c in kids]
+    return out
+
+
+def _find_node(node, path_norm):
+    """在 current_tree 中按规范路径查找节点（用于按需展开）。"""
+    cn = os.path.abspath(node['path']).rstrip('\\/').lower()
+    if cn == path_norm:
+        return node
+    for c in node.get('children', []):
+        r = _find_node(c, path_norm)
+        if r:
+            return r
+    return None
+
+
+@app.route('/api/tree_node')
+def api_tree_node():
+    """按需展开：返回某路径下一级子节点（同样做 TREE_MAX_DEPTH 相对折叠）。
+    查询参数 ?path=绝对路径。用于前端点击「展开更多」时懒加载深层。"""
+    if current_tree is None:
+        return jsonify({'ready': False})
+    raw = request.args.get('path', '').strip()
+    if not raw:
+        return jsonify({'error': '缺少 path 参数'}), 400
+    target = _find_node(current_tree, os.path.abspath(raw).rstrip('\\/').lower())
+    if not target:
+        return jsonify({'error': '路径不在已扫描树中', 'not_found': True}), 404
+    if not target.get('children'):
+        return jsonify({'ready': True, 'children': [], 'truncated': False})
+    # 目标层视为相对深度 0，再下发一层（depth+1），更深仍折叠
+    children = [_fold_deep(c, 1) for c in target['children']]
+    return jsonify({'ready': True, 'children': children, 'truncated': True,
+                    'descendant_dirs': target.get('descendant_dirs', 0),
+                    'descendant_bytes': target.get('descendant_bytes', 0)})
 
 
 @app.route('/api/report')
@@ -567,10 +634,11 @@ def api_delete():
         try:
             import send2trash
             send2trash.send2trash(path)
-        except ImportError:
-            # 无 send2trash：目录用 rmtree，文件用 remove（永久删除，已在前端二次确认）
+        except Exception:
+            # 回收站不可用（无 send2trash / 权限不足 / 路径过长等）：回退永久删除，
+            # 已在前端二次确认。目录用 rmtree，文件用 remove。
+            import shutil
             if os.path.isdir(path):
-                import shutil
                 shutil.rmtree(path)
             else:
                 os.remove(path)

@@ -529,30 +529,78 @@ function renderNode(node, isRoot, depth) {
   }
 
   // 懒加载子节点：初始只渲染首层，展开时再渲染下一层，避免一次性生成数十万 DOM 节点卡死页面
-  if (isDir && node.children && node.children.length) {
+  if (isDir) {
     const kids = document.createElement('div');
     kids.className = 'children';
     kids.style.display = 'none';
     let loaded = false;
-    tog.onclick = () => {
-      const willShow = kids.style.display === 'none';
-      if (willShow && !loaded) {
-        const frag = document.createDocumentFragment();
-        node.children.forEach(c => frag.appendChild(renderNode(c, false, depth + 1)));
-        kids.appendChild(frag);
-        loaded = true;
-      }
-      kids.style.display = willShow ? 'block' : 'none';
-      tog.textContent = willShow ? '▾' : '▸';
-    };
-    if (isRoot) {
-      // 根节点默认展开，但仅渲染直接子级（更深层级仍懒加载）
-      node.children.forEach(c => kids.appendChild(renderNode(c, false, depth + 1)));
-      loaded = true;
-      kids.style.display = 'block';
-      tog.textContent = '▾';
+    let loading = false;
+
+    // 后端对超大树只下发前几层，更深层折叠为 truncated 占位节点（带后代计数）。
+    // 展开占位节点时，调 /api/tree_node 按需拉取该路径下一级子节点，避免一次性下载 300MB 全树。
+    if (node.truncated && (!node.children || !node.children.length)) {
+      tog.textContent = '▸';
+      tog.onclick = () => {
+        const willShow = kids.style.display === 'none';
+        if (willShow && !loaded && !loading) {
+          loading = true;
+          tog.textContent = '⏳';
+          fetch('/api/tree_node?path=' + encodeURIComponent(node.path || ''))
+            .then(r => r.json())
+            .then(d => {
+              if (d.ready && d.children) {
+                const frag = document.createDocumentFragment();
+                d.children.forEach(c => frag.appendChild(renderNode(c, false, depth + 1)));
+                kids.appendChild(frag);
+                loaded = true;
+                // 占位节点被展开后，标记为非截断（已加载真实子级）
+                node.truncated = false;
+                tog.textContent = '▾';
+              } else {
+                tog.textContent = '▸';
+              }
+            })
+            .catch(() => { tog.textContent = '▸'; })
+            .finally(() => { loading = false; });
+        }
+        if (loaded) {
+          kids.style.display = kids.style.display === 'none' ? 'block' : 'none';
+          tog.textContent = kids.style.display === 'none' ? '▸' : '▾';
+        }
+      };
+      // 占位行额外显示后代规模提示
+      const ph = document.createElement('span');
+      ph.className = 'placeholder-hint';
+      ph.textContent = '▾ 展开更多（含 ' + (node.descendant_dirs || 0) + ' 个子文件夹，'
+        + (node.descendant_size_human || human_size(node.descendant_bytes || 0)) + '）';
+      ph.style.cursor = 'pointer';
+      ph.onclick = () => tog.onclick();
+      row.appendChild(ph);
+      wrap.appendChild(kids);
+      return wrap;
     }
-    wrap.appendChild(kids);
+
+    // 普通（已下发 children）节点的懒加载
+    if (node.children && node.children.length) {
+      tog.onclick = () => {
+        const willShow = kids.style.display === 'none';
+        if (willShow && !loaded) {
+          const frag = document.createDocumentFragment();
+          node.children.forEach(c => frag.appendChild(renderNode(c, false, depth + 1)));
+          kids.appendChild(frag);
+          loaded = true;
+        }
+        kids.style.display = willShow ? 'block' : 'none';
+        tog.textContent = willShow ? '▾' : '▸';
+      };
+      if (isRoot) {
+        node.children.forEach(c => kids.appendChild(renderNode(c, false, depth + 1)));
+        loaded = true;
+        kids.style.display = 'block';
+        tog.textContent = '▾';
+      }
+      wrap.appendChild(kids);
+    }
   }
   return wrap;
 }
@@ -578,6 +626,11 @@ function renderReport() {
       dirCount++;
       catCount[n.category] = (catCount[n.category] || 0) + 1;
       if (n.ai_analyzed) aiCount++;
+    }
+    // 折叠节点（truncated）的后代已不在 children 里，用聚合计数补上
+    if (n.truncated) {
+      dirCount += n.descendant_dirs || 0;
+      catCount.unknown += 0; // 深层分类未知，不强行归类
     }
     (n.children || []).forEach(walk);
   })(treeData);
