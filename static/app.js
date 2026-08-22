@@ -24,6 +24,7 @@ let logOffset = 0;
 let pollTimer = null;
 let treeRendered = false;   // 目录树是否已渲染过（扫描完成后只渲染一次，避免反复 rebuild 卡顿）
 let reportRendered = false; // 报告是否已渲染过（切视图只首次生成，之后直接切换不重渲染）
+let scanDoneHandled = false;// 扫描完成状态是否已处理过：保证“扫描完成”类日志只 push 一次，杜绝刷屏
 let logLines = [];          // 前端日志缓冲（仅用于渲染，最多保留最近 MAX_LOG_RENDER 条）
 const MAX_LOG_RENDER = 1000;
 let reportCount = 0;        // 报告渲染计数器（用于限流）
@@ -212,6 +213,7 @@ function startScan(force) {
   treeData = null;
   treeRendered = false;
   reportRendered = false;
+  scanDoneHandled = false;   // 新一轮扫描：解除“已完成”锁定，允许重新显示完成状态
   logOffset = 0;
   showReportBtn.disabled = true;
   switchView('tree');
@@ -264,10 +266,15 @@ function poll() {
       // 若先看 scanning，前端会一直停在"扫描中"转圈，体感就是"扫完了还在不断扫"。
       if (s.done) {
         setStatus(s.scanning ? '扫描完成 ✓（AI 分析后台进行中…）' : '扫描完成 ✓', 'ok');
+        // 无论前端此时处于什么状态，done 命中即停止轮询，绝不允许“扫描完成后还不断轮询”
         if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
         // 扫描完成只拉取并渲染一次目录树；之后绝不轮询/重渲染，避免卡顿
-        if (!treeRendered) fetchTree();
-        else pushLog('✅ 扫描完成（目录树已渲染，无需重复刷新）。');
+        // 关键修复：用 scanDoneHandled 兜底，即使 treeRendered 因渲染异常未置位，
+        // 也绝不会在每次轮询都重复 push“扫描完成”日志（旧版刷屏根因）。
+        if (!scanDoneHandled) {
+          scanDoneHandled = true;
+          if (!treeRendered) fetchTree();
+        }
         return;
       }
       if (s.scanning) {
@@ -299,6 +306,7 @@ function recoverTree() {
         renderTree();
         treeRendered = true;
         reportRendered = false;
+        scanDoneHandled = true;   // 恢复场景同样标记“已完成”，杜绝后续重复刷日志
         showReportBtn.disabled = false;
         setStatus('扫描完成 ✓（已恢复上次结果）', 'ok');
         pushLog('✅ 已从服务端恢复上次扫描的目录树，点「查看报告」查看说明。');
@@ -405,10 +413,16 @@ function fetchTree() {
         treeRendered = true;
         reportRendered = false;   // 新树就绪后，报告也需重新生成（首次打开时）
         showReportBtn.disabled = false;
+        // “扫描完成”仅首次渲染成功后打一次；scanDoneHandled 已置位，不会重复
         pushLog('✅ 扫描完成，可点「查看报告」查看每个文件夹的说明。');
       } else {
         appendLog('⚠ 尚未扫描完成');
       }
+    })
+    .catch(e => {
+      // 树过大/网络抖动导致拉取失败：只提示一次，绝不重试刷屏
+      if (!treeRendered) appendLog('⚠ 目录树加载失败，请稍后点「重新扫描」或刷新页面。');
+      treeRendered = true; // 置位防止 poll 重试（scanDoneHandled 已挡住日志，这里只为停止重拉）
     });
 }
 
