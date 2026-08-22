@@ -428,11 +428,12 @@ function fetchTree() {
 
 function renderTree() {
   treeEl.innerHTML = '';
-  treeEl.appendChild(renderNode(treeData, true));
+  treeEl.appendChild(renderNode(treeData, true, 0));
   applyFilter();
 }
 
-function renderNode(node, isRoot) {
+function renderNode(node, isRoot, depth) {
+  depth = depth || 0;
   const wrap = document.createElement('div');
   wrap.className = 'node';
   wrap.dataset.path = node.path || '';   // 删除时按路径精准隐藏该节点（不重渲染整树）
@@ -508,6 +509,14 @@ function renderNode(node, isRoot) {
     e.textContent = '⚠ 无法访问：' + node.error;
     row.appendChild(e);
   }
+  // 深层（>2层）且未识别（无 AI 说明）的文件夹：提示用户可点「🤖 AI分析」按需识别，
+  // 因为自动批量只分析前两层，避免整树全量调 AI 卡住扫描完成后的界面。
+  if (depth > 2 && node.category === 'unknown' && !node.ai_analyzed && !node.description) {
+    const hint = document.createElement('div');
+    hint.className = 'advice';
+    hint.textContent = '💡 深层文件夹默认不自动分析，点「🤖 AI分析」可识别它';
+    row.appendChild(hint);
+  }
   wrap.appendChild(row);
 
   // AI 说明容器：预分析结果与「🤖 AI分析」点击结果都插入此处，紧跟行下方（位于子节点之上）
@@ -529,7 +538,7 @@ function renderNode(node, isRoot) {
       const willShow = kids.style.display === 'none';
       if (willShow && !loaded) {
         const frag = document.createDocumentFragment();
-        node.children.forEach(c => frag.appendChild(renderNode(c, false)));
+        node.children.forEach(c => frag.appendChild(renderNode(c, false, depth + 1)));
         kids.appendChild(frag);
         loaded = true;
       }
@@ -538,7 +547,7 @@ function renderNode(node, isRoot) {
     };
     if (isRoot) {
       // 根节点默认展开，但仅渲染直接子级（更深层级仍懒加载）
-      node.children.forEach(c => kids.appendChild(renderNode(c, false)));
+      node.children.forEach(c => kids.appendChild(renderNode(c, false, depth + 1)));
       loaded = true;
       kids.style.display = 'block';
       tog.textContent = '▾';
@@ -663,6 +672,13 @@ function renderReportNode(node, depth, container) {
     e.className = 'err';
     e.textContent = '⚠ 无法访问：' + node.error;
     item.appendChild(e);
+  }
+  // 深层未识别文件夹提示：自动分析只覆盖前两层，更深的可点「🤖 AI分析」按需识别
+  if (depth > 2 && node.category === 'unknown' && !node.ai_analyzed && !node.description) {
+    const hint = document.createElement('div');
+    hint.className = 'report-advice';
+    hint.innerHTML = '💡 深层文件夹默认不自动分析，点「🤖 AI分析」可识别它';
+    item.appendChild(hint);
   }
   if (node.ai_analyzed) {
     item.classList.add('ai');

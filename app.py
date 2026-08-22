@@ -241,10 +241,13 @@ def scan_worker(path, my_gen):
         scan_state['done'] = True
         log(f"[分类完成] 共 {count_nodes(tree)} 个节点，目录树已可查看。开始可选的 AI 分析...")
         # AI 分析：尽力而为（DeepSeek 失败/超时不影响已生成的目录树与报告）
+        # 渐进式：只自动分析根下前两层(深度0/1)的未识别大文件夹，深层由用户点按钮按需分析，
+        # 避免扫一整棵巨型目录树时把几十个 >2GB 文件夹全量调 AI 导致扫描完成后仍长时间卡住。
         try:
             ai_describe(tree, KB, AI,
-                        ai_progress=lambda n: log(f"[AI] 识别 {n} 个大文件夹（>2GB 未收录）..."),
-                        should_stop=lambda: my_gen != scan_gen)
+                        ai_progress=lambda n: log(f"[AI] 自动识别前两层 {n} 个大文件夹（>2GB 未识别）；更深层可点「🤖 AI分析」按需分析..."),
+                        should_stop=lambda: my_gen != scan_gen,
+                        max_auto_depth=2)
             if my_gen != scan_gen:
                 log('⏹ 已取消（被新扫描取代）')
                 return

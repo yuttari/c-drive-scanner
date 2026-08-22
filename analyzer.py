@@ -18,19 +18,28 @@ def classify_tree(tree, kb):
     return tree
 
 
-def ai_describe(tree, kb, ai, ai_progress=None, should_stop=None):
+def ai_describe(tree, kb, ai, ai_progress=None, should_stop=None, max_auto_depth=2):
     """对规则未命中且 >= 阈值的文件夹批量调 AI。本函数不保证成功——调用方应自行 try/except，
-    失败也不影响已生成的目录树/报告。"""
+    失败也不影响已生成的目录树/报告。
+
+    渐进式分析：只自动批量分析「前 max_auto_depth 层」(默认根下第一、二级) 的未识别大文件夹，
+    避免一次扫描对深层几十上百个 >2GB 文件夹全量调 AI 导致扫描完成后长时间卡住（scanning 一直
+    True、前端转圈）。更深的文件夹不在自动批量里——用户可在界面点「🤖 AI分析」按钮按需分析
+    （/api/analyze 单文件夹分析，带磁盘缓存，不浪费额度）。
+    """
     unknown_big = []
 
-    def collect(node):
+    def collect(node, depth):
         if node['is_dir'] and not node['is_link'] and node['accessible']:
-            if node.get('category') == 'unknown' and node['size_bytes'] >= ai.threshold:
+            # 仅前 max_auto_depth 层纳入自动批量；深层留待用户点击分析
+            if depth <= max_auto_depth \
+                    and node.get('category') == 'unknown' \
+                    and node['size_bytes'] >= ai.threshold:
                 unknown_big.append(node)
             for c in node['children']:
-                collect(c)
+                collect(c, depth + 1)
 
-    collect(tree)
+    collect(tree, 0)
 
     if ai.enabled and unknown_big:
         if should_stop and should_stop():
@@ -52,8 +61,9 @@ def ai_describe(tree, kb, ai, ai_progress=None, should_stop=None):
     return tree
 
 
-def enrich(tree, kb, ai, ai_progress=None, should_stop=None):
+def enrich(tree, kb, ai, ai_progress=None, should_stop=None, max_auto_depth=2):
     """兼容旧调用方（run_and_export / rebuild）：先分类，再做 AI。"""
     classify_tree(tree, kb)
-    ai_describe(tree, kb, ai, ai_progress=ai_progress, should_stop=should_stop)
+    ai_describe(tree, kb, ai, ai_progress=ai_progress, should_stop=should_stop,
+                max_auto_depth=max_auto_depth)
     return tree
