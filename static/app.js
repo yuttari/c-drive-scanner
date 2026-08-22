@@ -22,6 +22,8 @@ const keyTesting = document.getElementById('keyTesting');
 let treeData = null;
 let logOffset = 0;
 let pollTimer = null;
+let treeRendered = false;   // 目录树是否已渲染过（扫描完成后只渲染一次，避免反复 rebuild 卡顿）
+let reportRendered = false; // 报告是否已渲染过（切视图只首次生成，之后直接切换不重渲染）
 let logLines = [];          // 前端日志缓冲（仅用于渲染，最多保留最近 MAX_LOG_RENDER 条）
 const MAX_LOG_RENDER = 1000;
 let reportCount = 0;        // 报告渲染计数器（用于限流）
@@ -182,7 +184,8 @@ function switchView(view) {
     treePanel.style.display = 'none';
     showReportBtn.classList.add('active');
     showTreeBtn.classList.remove('active');
-    if (treeData) renderReport();   // 首次打开时生成报告
+    // 仅在首次/树有更新时生成报告；之后直接切换，避免重复渲染几万 DOM 卡顿
+    if (treeData && !reportRendered) { renderReport(); reportRendered = true; }
   } else {
     treePanel.style.display = 'block';
     reportPanel.style.display = 'none';
@@ -205,6 +208,8 @@ function startScan(force) {
   reportEl.innerHTML = '';
   reportSummaryEl.innerHTML = '';
   treeData = null;
+  treeRendered = false;
+  reportRendered = false;
   logOffset = 0;
   showReportBtn.disabled = true;
   switchView('tree');
@@ -257,7 +262,9 @@ function poll() {
       } else if (s.done) {
         setStatus('扫描完成 ✓', 'ok');
         if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-        fetchTree();
+        // 扫描完成只拉取并渲染一次目录树；之后绝不轮询/重渲染，避免卡顿
+        if (!treeRendered) fetchTree();
+        else pushLog('✅ 扫描完成（目录树已渲染，无需重复刷新）。');
       } else {
         setStatus('空闲', '');
       }
@@ -283,6 +290,8 @@ function recoverTree() {
       if (d.ready && d.tree) {
         treeData = d.tree;
         renderTree();
+        treeRendered = true;
+        reportRendered = false;
         showReportBtn.disabled = false;
         setStatus('扫描完成 ✓（已恢复上次结果）', 'ok');
         pushLog('✅ 已从服务端恢复上次扫描的目录树，点「查看报告」查看说明。');
@@ -340,6 +349,8 @@ function fetchTree() {
       if (d.ready) {
         treeData = d.tree;
         renderTree();
+        treeRendered = true;
+        reportRendered = false;   // 新树就绪后，报告也需重新生成（首次打开时）
         showReportBtn.disabled = false;
         pushLog('✅ 扫描完成，可点「查看报告」查看每个文件夹的说明。');
       } else {
@@ -357,6 +368,7 @@ function renderTree() {
 function renderNode(node, isRoot) {
   const wrap = document.createElement('div');
   wrap.className = 'node';
+  wrap.dataset.path = node.path || '';   // 删除时按路径精准隐藏该节点（不重渲染整树）
 
   const row = document.createElement('div');
   row.className = 'row cat-' + node.category;
@@ -480,6 +492,7 @@ function renderReport() {
   reportEl.innerHTML = '';
   reportSummaryEl.innerHTML = '';
   if (!treeData) return;
+  reportRendered = true;
 
   // 统计各类数量
   let dirCount = 0, totalBytes = treeData.size_bytes, aiCount = 0;
@@ -660,10 +673,12 @@ function deleteFolder(node, itemEl) {
         if (delBtn) { delBtn.disabled = false; delBtn.textContent = '🗑 删除'; }
         return;
       }
-      // 从前端内存树移除该节点
+      // 从前端内存树移除该节点（供后续报告/筛选一致），但不触发任何整树重渲染
       removeNodeFromTree(treeData, path);
-      // 从 DOM 移除该节点所在的整块（目录树节点 wrap，或报告 item）
-      itemEl.remove();
+      // 直接在 DOM 上隐藏被删节点（目录树 + 报告两个视图都隐藏），不重建整棵树 —— 避免卡顿
+      hideNodeEverywhere(path);
+      // 兼容旧逻辑：若传入的 itemEl 是其中之一，确保也被隐藏
+      if (itemEl && itemEl.style.display !== 'none') itemEl.style.display = 'none';
       pushLog('🗑 已删除：' + path + (d.method === 'permanent' ? '（永久删除）' : '（已进回收站）'));
       setStatus('已删除 1 项', 'ok');
     })
@@ -686,6 +701,18 @@ function removeNodeFromTree(node, path) {
     if (removeNodeFromTree(c, path)) return true;
   }
   return false;
+}
+
+// 删除成功后：在目录树与报告两个视图里，按路径找到对应 DOM 节点并隐藏（display:none）。
+// 不重建整棵树/整份报告，避免几万节点重渲染导致卡顿。
+function hideNodeEverywhere(path) {
+  const target = path.replace('/', '\\').toLowerCase();
+  const match = (el) => {
+    const p = (el.dataset && el.dataset.path) || '';
+    return p.replace('/', '\\').toLowerCase() === target;
+  };
+  treeEl.querySelectorAll('.node').forEach(n => { if (match(n)) n.style.display = 'none'; });
+  reportEl.querySelectorAll('.report-item').forEach(n => { if (match(n)) n.style.display = 'none'; });
 }
 
 searchInput.oninput = applyFilter;
