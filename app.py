@@ -152,8 +152,9 @@ current_tree = None
 
 # 日志保护：服务端最多保留最近 MAX_LOGS 条；每次状态查询最多回传 MAX_LOG_BATCH 条，
 # 避免超大扫描时一次性把几十万条日志灌进浏览器导致卡死。
+# MAX_LOG_BATCH 调小（1000 -> 60）：配合前端 rAF 涓流插入，每次 poll 只取少量，页面平滑更新不卡。
 MAX_LOGS = 500000
-MAX_LOG_BATCH = 1000
+MAX_LOG_BATCH = 60
 
 
 def add_log(line):
@@ -200,11 +201,30 @@ def scan_worker(path, my_gen):
     scan_state['started_at'] = time.time()
     scan_state['last_progress_at'] = time.time()
 
+    # —— 进度日志节流 ——
+    # 根因：每个目录都写一条日志，大目录（如 node_modules 上万个子目录）每秒产生几千条，
+    # 后端 logs 无限增长、前端每批最多插 1000 条 DOM，主线程被占满 -> 鼠标挪不动 / 一次性蹦一大坨。
+    # 修复：dirs 计数保持精确（供状态显示）；日志改为「每 ~0.35s 或每 150 个目录」才记一条摘要，
+    # 大幅削减日志总量，前端呈现为平滑的涓流更新而非爆发。
+    _prog_last_log = {'t': time.time(), 'n': 0, 'p': path, 'sz': 0, 'err': 0}
+
     def on_progress(p, size, error=None):
         scan_state['progress']['dirs'] += 1
         scan_state['last_progress_at'] = time.time()
-        line = f"[扫描] {p}  {human_size(size)}" + (f"  ⚠ {error}" if error else "")
-        log(line)
+        _prog_last_log['n'] += 1
+        _prog_last_log['sz'] = size
+        if error:
+            _prog_last_log['err'] += 1
+        now = time.time()
+        if (now - _prog_last_log['t'] >= 0.35) or _prog_last_log['n'] >= 150:
+            n = _prog_last_log['n']
+            total = human_size(_prog_last_log['sz'])
+            extra = f"  ⚠ {_prog_last_log['err']} 个访问失败" if _prog_last_log['err'] else ""
+            line = f"[扫描] 已扫 {scan_state['progress']['dirs']} 个目录，最近：{p}  {total}{extra}"
+            log(line)
+            _prog_last_log['t'] = now
+            _prog_last_log['n'] = 0
+            _prog_last_log['err'] = 0
 
     try:
         if my_gen != scan_gen:

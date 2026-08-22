@@ -95,7 +95,7 @@ h1 { font-size: 20px; margin: 8px 0 4px; }
 """
 
 REPORT_JS = """
-const CAT_LABEL = {safe:'可直接删', software_clean:'软件内清', confirm:'需确认', never:'禁止删', unknown:'未收录', ai:'AI 识别'};
+const CAT_LABEL = {safe:'可直接删', software_clean:'软件内清', confirm:'需确认', never:'禁止删', unknown:'未识别', ai:'AI 识别'};
 const CAT_ICON = {safe:'🟢', software_clean:'🔵', confirm:'🟡', never:'🔴', unknown:'⚪', ai:'🤖'};
 const LV_LABEL = {safe:'🟢 可删除', caution:'🟡 谨慎', never:'🔴 别删'};
 const CONF_LABEL = {high:'高', medium:'中', low:'低'};
@@ -204,7 +204,7 @@ function renderReport(){
       '<span class="badge cat-software_clean">🔵 软件内清 '+catCount.software_clean+'</span>'+
       '<span class="badge cat-confirm">🟡 需确认 '+catCount.confirm+'</span>'+
       '<span class="badge cat-never">🔴 禁止删 '+catCount.never+'</span>'+
-      '<span class="badge cat-unknown">⚪ 未收录 '+catCount.unknown+'</span>'+
+      '<span class="badge cat-unknown">⚪ 未识别 '+catCount.unknown+'</span>'+
       (aiCount?'<span class="badge cat-ai">🤖 AI 识别 '+aiCount+'</span>':'')+
     '</div>';
   const list = document.getElementById('list');
@@ -340,7 +340,7 @@ def export_report_html(tree, out_path):
       <option value="software_clean">🔵 软件内清</option>
       <option value="confirm">🟡 需确认</option>
       <option value="never">🔴 禁止删</option>
-      <option value="unknown">⚪ 未收录</option>
+      <option value="unknown">⚪ 未识别</option>
     </select>
     <input id="dsKey" class="ds-key" placeholder="DeepSeek API Key（可选，用于逐文件夹 AI 分析）">
   </div>
@@ -362,12 +362,12 @@ const DATA = JSON.parse("{data_json}");
 
 
 def build_focused_payload(tree, top_n=500):
-    """只抽取「最大的 N 个」+「所有有说明的文件夹」+「未收录大文件夹 AI 识别」，避开十几万未识别噪声。"""
+    """只抽取「最大的 N 个」+「所有有说明的文件夹」+「未识别大文件夹 AI 识别」，避开十几万未识别噪声。"""
     total_dirs = 0
     cat_counts = {}
     top = []
     described = []
-    big_unknown = []   # 未收录且被 AI 识别（>2GB）的大文件夹
+    big_unknown = []   # 未识别且被 AI 识别（>2GB）的大文件夹
 
     def walk(n):
         nonlocal total_dirs
@@ -442,7 +442,7 @@ FOCUSED_CSS = REPORT_CSS + """
 """
 
 FOCUSED_JS = """
-const CAT_LABEL = {safe:'可直接删', software_clean:'软件内清', confirm:'需确认', never:'禁止删', unknown:'未收录', ai:'AI 识别'};
+const CAT_LABEL = {safe:'可直接删', software_clean:'软件内清', confirm:'需确认', never:'禁止删', unknown:'未识别', ai:'AI 识别'};
 const CAT_ICON = {safe:'🟢', software_clean:'🔵', confirm:'🟡', never:'🔴', unknown:'⚪', ai:'🤖'};
 const LV_LABEL = {safe:'🟢 可删除', caution:'🟡 谨慎', never:'🔴 别删'};
 const CONF_LABEL = {high:'高', medium:'中', low:'低'};
@@ -691,7 +691,7 @@ def export_focused_report_html(tree, out_path, top_n=500):
     <thead><tr><th>#</th><th>大小</th><th>文件夹</th><th>分类</th><th>路径</th></tr></thead>
     <tbody id="topBody"></tbody>
   </table></div>
-  <div class="section-title" id="bigSec">🤖 未收录大文件夹（&gt;2GB）AI 识别（{payload['big_unknown'] and len(payload['big_unknown']) or 0} 个）</div>
+  <div class="section-title" id="bigSec">🤖 未识别大文件夹（&gt;2GB）AI 识别（{payload['big_unknown'] and len(payload['big_unknown']) or 0} 个）</div>
   <div id="bigList" class="report-list"></div>
   <div class="section-title">📁 全部「已识别 / 有说明」的文件夹（{payload['described'] and len(payload['described']) or 0} 个）</div>
   <div id="descList" class="report-list"></div>

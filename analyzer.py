@@ -8,7 +8,7 @@ def classify_tree(tree, kb):
         if res:
             node.update(res)
         else:
-            # 规则库未命中 -> 标记为「未收录」。保留节点上已有的 description/advice
+            # 规则库未命中 -> 标记为「未识别」(category=unknown)。保留节点上已有的 description/advice
             # （多来自旧缓存，避免低阈值(<2GB)已说明的文件夹在阈值提升后被清空）。
             node['category'] = 'unknown'
         if node['is_dir'] and not node['is_link'] and node['accessible']:

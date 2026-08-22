@@ -96,7 +96,7 @@ function checkKeyGate() {
 
 const CAT_LABEL = {
   safe: '可直接删', software_clean: '软件内清',
-  confirm: '需确认', never: '禁止删', unknown: '未收录',
+  confirm: '需确认', never: '禁止删', unknown: '未识别',
   ai: 'AI 识别'
 };
 const CAT_ICON = {
@@ -203,6 +203,8 @@ function startScan(force) {
   const path = pathInput.value.trim();
   if (!path) return;
   logLines = [];
+  _logQueue = [];
+  _logRafScheduled = false;
   renderLog();
   treeEl.innerHTML = '';
   reportEl.innerHTML = '';
@@ -237,8 +239,8 @@ function startScan(force) {
         return;
       }
       pushLog('⏳ 扫描已开始，日志实时刷新（最新在上）…');
-      poll();                       // 立即拉一次，避免等 500ms
-      pollTimer = setInterval(poll, 1000);
+      poll();                       // 立即拉一次，避免等一轮
+      pollTimer = setInterval(poll, 500);
     })
     .catch(e => { pushLog('❌ 请求失败：' + e); setStatus('错误', 'err'); });
 }
@@ -322,7 +324,7 @@ function recoverTree() {
 function pushLog(line) {
   logLines.push(line);
   if (logLines.length > MAX_LOG_RENDER) logLines = logLines.slice(-MAX_LOG_RENDER);
-  appendLogLine(line, false);
+  _enqueueLog(line, false);
 }
 
 function appendLogs(newLines, skipped) {
@@ -338,12 +340,48 @@ function appendLogs(newLines, skipped) {
   }
 }
 
-// 单条日志增量插入：最新显示在顶部（prepend）
+// —— 日志插入节流：用 rAF 队列，每帧最多插 INSERT_PER_FRAME 条，避免一次性插几百节点卡死主线程 ——
+// 问题背景：扫描中后端每批最多回传 MAX_LOG_BATCH 条，若一次性全部 insert，单帧 DOM 操作过多 ->
+// 鼠标拖动卡顿。改为"待插入队列 + 每帧限量"，呈现为平滑涓流，既频繁又不会突然蹦一大坨。
+const INSERT_PER_FRAME = 12;
+let _logQueue = [];
+let _logRafScheduled = false;
+
+function _flushLogQueue() {
+  _logRafScheduled = false;
+  if (_logQueue.length === 0) return;
+  const frag = document.createDocumentFragment();
+  let n = 0;
+  while (_logQueue.length && n < INSERT_PER_FRAME) {
+    const item = _logQueue.shift();
+    const d = document.createElement('div');
+    d.className = 'log-line' + (item.isNote ? ' log-note' : '');
+    d.textContent = item.text;
+    frag.appendChild(d);
+    n++;
+  }
+  logEl.insertBefore(frag, logEl.firstChild);
+  // 超上限从底部裁剪（不整体重排）
+  while (logEl.childElementCount > MAX_LOG_RENDER) {
+    logEl.removeChild(logEl.lastElementChild);
+  }
+  if (_logQueue.length) {
+    _logRafScheduled = true;
+    requestAnimationFrame(_flushLogQueue);
+  }
+}
+
+function _enqueueLog(text, isNote) {
+  _logQueue.push({ text, isNote });
+  if (!_logRafScheduled) {
+    _logRafScheduled = true;
+    requestAnimationFrame(_flushLogQueue);
+  }
+}
+
+// 单条日志入队（顶部最新）
 function appendLogLine(text, isNote) {
-  const d = document.createElement('div');
-  d.className = 'log-line' + (isNote ? ' log-note' : '');
-  d.textContent = text;
-  logEl.insertBefore(d, logEl.firstChild);
+  _enqueueLog(text, isNote);
 }
 
 // 全量重建仅用于“清空/初始化”（startScan 时调用一次），平时绝不使用
@@ -532,7 +570,7 @@ function renderReport() {
       `<span class="badge cat-software_clean">🔵 软件内清 ${catCount.software_clean}</span>` +
       `<span class="badge cat-confirm">🟡 需确认 ${catCount.confirm}</span>` +
       `<span class="badge cat-never">🔴 禁止删 ${catCount.never}</span>` +
-      `<span class="badge cat-unknown">⚪ 未收录 ${catCount.unknown}</span>` +
+      `<span class="badge cat-unknown">⚪ 未识别 ${catCount.unknown}</span>` +
       (aiCount ? `<span class="badge cat-ai">🤖 AI 识别 ${aiCount}</span>` : '') +
     `</div>`;
   reportSummaryEl.appendChild(sum);
