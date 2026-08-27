@@ -54,11 +54,11 @@ def port_in_use(port, host='127.0.0.1'):
 load_dotenv(os.path.join(BASE, '.env'))
 
 KB = KnowledgeBase(os.path.join(BASE, 'rules.json'))
-# AI 仅对「未收录且 > 2GB」的大文件夹做归属/用途/可删性识别，控制成本与耗时。
+# AI 仅对「未收录且 > 1GB」的大文件夹做归属/用途/可删性识别，控制成本与耗时（第一层目录无视大小强制识别）。
 AI = AIDescriber(
     api_key=os.getenv('DEEPSEEK_API_KEY'),
     base_url=os.getenv('DEEPSEEK_BASE_URL', 'https://api.deepseek.com'),
-    threshold=2 * 1024 * 1024 * 1024,
+    threshold=1 * 1024 * 1024 * 1024,
 )
 
 
@@ -100,7 +100,7 @@ def rebuild_ai_with_key(api_key, base_url):
     AI = AIDescriber(
         api_key=api_key,
         base_url=base_url,
-        threshold=2 * 1024 * 1024 * 1024,
+        threshold=1 * 1024 * 1024 * 1024,
     )
     return AI.enabled
 
@@ -242,11 +242,11 @@ def scan_worker(path, my_gen):
         log(f"[分类完成] 共 {count_nodes(tree)} 个节点，目录树已可查看。开始可选的 AI 分析...")
         # AI 分析：尽力而为（DeepSeek 失败/超时不影响已生成的目录树与报告）
         # 第一层目录（扫描根的直接子目录）全部强制 AI 识别（无视大小阈值），扫描完成即给出
-        # 「是什么 / 能不能删」结论；更深层仍渐进式（仅未识别且 >2GB 才自动分析），其余由用户
+        # 「是什么 / 能不能删」结论；更深层仍渐进式（仅未识别且 >1GB 才自动分析），其余由用户
         # 点「🤖 AI分析」按需分析，避免巨树全量调 AI 长时间卡住。
         try:
             ai_describe(tree, KB, AI,
-                        ai_progress=lambda n: log(f"[AI] 第一层目录全部（{n} 个）已交给 AI 识别；更深层仅未识别且 >2GB 的自动分析，其余可点「🤖 AI分析」按需分析..."),
+                        ai_progress=lambda n: log(f"[AI] 第一层目录全部（{n} 个）已交给 AI 识别；更深层仅未识别且 >1GB 的自动分析，其余可点「🤖 AI分析」按需分析..."),
                         should_stop=lambda: my_gen != scan_gen,
                         max_auto_depth=2)
             if my_gen != scan_gen:
