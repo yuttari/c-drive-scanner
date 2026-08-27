@@ -8,3 +8,7 @@ reports/
 *.log
 server*.log
 .workbuddy/
+*.key
+node_modules/
+.venv/
+.DS_Store
