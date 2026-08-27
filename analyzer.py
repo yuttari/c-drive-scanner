@@ -19,45 +19,51 @@ def classify_tree(tree, kb):
 
 
 def ai_describe(tree, kb, ai, ai_progress=None, should_stop=None, max_auto_depth=2):
-    """对规则未命中且 >= 阈值的文件夹批量调 AI。本函数不保证成功——调用方应自行 try/except，
-    失败也不影响已生成的目录树/报告。
+    """自动 AI 识别编排。
 
-    渐进式分析：只自动批量分析「前 max_auto_depth 层」(默认根下第一、二级) 的未识别大文件夹，
-    避免一次扫描对深层几十上百个 >2GB 文件夹全量调 AI 导致扫描完成后长时间卡住（scanning 一直
-    True、前端转圈）。更深的文件夹不在自动批量里——用户可在界面点「🤖 AI分析」按钮按需分析
-    （/api/analyze 单文件夹分析，带磁盘缓存，不浪费额度）。
+    规则：
+    - 第一层目录（depth==1，即被扫描根的直接子目录）：无论大小、无论是否已被规则库识别，
+      都强制交给 AI 识别，扫描完成后即给出「这个文件夹是干什么的 / 能不能删」的结论。
+      （系统级「禁止删」保护项 category=='never' 除外，避免 AI 误判引发误删。）
+    - 更深层（depth 2..max_auto_depth）：仍渐进式，仅对「规则未命中且 >= 阈值(2GB)」的大文件夹
+      自动分析，避免整棵巨树一次性全量调 AI 导致扫描完成后长时间卡住；更深的可点
+      「🤖 AI分析」按需分析。
     """
-    unknown_big = []
+    auto_list = []  # (node, orig_category)
 
     def collect(node, depth):
         if node['is_dir'] and not node['is_link'] and node['accessible']:
-            # 仅前 max_auto_depth 层纳入自动批量；深层留待用户点击分析
-            if depth <= max_auto_depth \
-                    and node.get('category') == 'unknown' \
-                    and node['size_bytes'] >= ai.threshold:
-                unknown_big.append(node)
+            if depth <= max_auto_depth:
+                cat = node.get('category')
+                if cat == 'never':
+                    pass  # 系统级禁止删：保留原分类，不交 AI
+                elif depth == 1:
+                    auto_list.append((node, cat))              # 第一层：全部纳入 AI 识别
+                elif cat == 'unknown' and node['size_bytes'] >= ai.threshold:
+                    auto_list.append((node, cat))              # 深层：渐进式，仅未识别大文件夹
             for c in node['children']:
                 collect(c, depth + 1)
 
     collect(tree, 0)
 
-    if ai.enabled and unknown_big:
+    if ai.enabled and auto_list:
         if should_stop and should_stop():
             return tree
         if ai_progress:
-            ai_progress(len(unknown_big))
+            ai_progress(len(auto_list))
         ai.describe_batch([
             {'path': n['path'], 'name': n['name'], 'size_human': n['size_human']}
-            for n in unknown_big
+            for n, _ in auto_list
         ])
-        for n in unknown_big:
+        for n, orig_cat in auto_list:
             if should_stop and should_stop():
                 return tree
             if n['path'] in ai.cache:
-                n.update(ai.cache[n['path']])
-                # 凡经大模型分析的文件夹，强制标记为「🤖 AI 识别」，不再显示「未收录」。
+                cached = ai.cache[n['path']]
+                n.update(cached)   # cached 含 category='ai'、summary、deletable 等
                 if n.get('ai_analyzed'):
-                    n['category'] = 'ai'
+                    # 原本未识别 -> 标记为「🤖 AI 识别」；规则已识别 -> 保留原 badge，仅附加 AI 说明
+                    n['category'] = 'ai' if orig_cat == 'unknown' else orig_cat
     return tree
 
 
