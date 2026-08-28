@@ -13,5 +13,6 @@ node_modules/
 .venv/
 .DS_Store
 # 本地产物（导出报告与临时副本，勿入库）
+代码解读报告.html
 扫描结果导出.html
-*-副本.bat
+start - 副本.bat
