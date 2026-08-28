@@ -24,6 +24,7 @@ let logOffset = 0;
 let pollTimer = null;
 let treeRendered = false;   // 目录树是否已渲染过（扫描完成后只渲染一次，避免反复 rebuild 卡顿）
 let reportRendered = false; // 报告是否已渲染过（切视图只首次生成，之后直接切换不重渲染）
+let prevAiDone = false;     // 上一轮 poll 时 ai_done 的值，用于检测 AI 完成瞬间
 let scanDoneHandled = false;// 扫描完成状态是否已处理过：保证“扫描完成”类日志只 push 一次，杜绝刷屏
 let logLines = [];          // 前端日志缓冲（仅用于渲染，最多保留最近 MAX_LOG_RENDER 条）
 const MAX_LOG_RENDER = 1000;
@@ -41,7 +42,7 @@ function showKeyGate() {
 function enterApp() {
   keyGate.style.display = 'none';
   appRoot.style.display = 'block';
-  recoverTree();   // 进入后恢复上次扫描结果（如有）
+  // 不再自动恢复上次结果；用户需主动点「扫描」或「目录树」查看
 }
 
 function showKeyError(msg) {
@@ -173,7 +174,7 @@ function aiResultBlock(r) {
 }
 
 scanBtn.onclick = startScan;
-showTreeBtn.onclick = () => switchView('tree');
+showTreeBtn.onclick = () => { switchView('tree'); if (!treeRendered) fetchTree(); };
 showReportBtn.onclick = () => switchView('report');
 
 // 页面加载：先校验入口 Key（无可用 Key 弹窗，测试通过才进入功能界面并恢复上次结果）
@@ -213,7 +214,8 @@ function startScan(force) {
   treeData = null;
   treeRendered = false;
   reportRendered = false;
-  scanDoneHandled = false;   // 新一轮扫描：解除“已完成”锁定，允许重新显示完成状态
+  scanDoneHandled = false;   // 新一轮扫描：解除"已完成"锁定，允许重新显示完成状态
+  prevAiDone = false;        // 重置 AI 完成检测标记
   logOffset = 0;
   showReportBtn.disabled = true;
   switchView('tree');
@@ -265,15 +267,22 @@ function poll() {
       // 后端在"主体扫描完成"即置 done=true，但 AI 分析阶段 scanning 仍为 true；
       // 若先看 scanning，前端会一直停在"扫描中"转圈，体感就是"扫完了还在不断扫"。
       if (s.done) {
-        setStatus(s.scanning ? '扫描完成 ✓（AI 分析后台进行中…）' : '扫描完成 ✓', 'ok');
-        // 无论前端此时处于什么状态，done 命中即停止轮询，绝不允许“扫描完成后还不断轮询”
-        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-        // 扫描完成只拉取并渲染一次目录树；之后绝不轮询/重渲染，避免卡顿
-        // 关键修复：用 scanDoneHandled 兜底，即使 treeRendered 因渲染异常未置位，
-        // 也绝不会在每次轮询都重复 push“扫描完成”日志（旧版刷屏根因）。
+        setStatus(s.ai_done ? '扫描完成 ✓' : '扫描完成 ✓（AI 分析后台进行中…）', 'ok');
+        // 目录树已可看：首次拉取一次
         if (!scanDoneHandled) {
           scanDoneHandled = true;
           if (!treeRendered) fetchTree();
+        }
+        // AI 分析刚完成：重置 treeRendered，触发一次重新拉取+渲染，拿到 AI 分类结果
+        if (s.ai_done && !prevAiDone) {
+          treeRendered = false;
+          reportRendered = false;
+          fetchTree();
+        }
+        prevAiDone = s.ai_done;
+        // AI 分析未完成时继续轮询拉日志，完成后彻底停止
+        if (s.ai_done) {
+          if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
         }
         return;
       }

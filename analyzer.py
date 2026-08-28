@@ -31,6 +31,12 @@ def ai_describe(tree, kb, ai, ai_progress=None, should_stop=None, max_auto_depth
     """
     auto_list = []  # (node, orig_category)
 
+    # 根节点（depth=0）：若未被规则库识别且可访问，也交给 AI（与 depth==1 同等对待）。
+    # 原逻辑从 depth=0 递归但 depth==0 不命中任何分支，导致扫描根自身永远「未识别」。
+    if (tree.get('is_dir') and not tree.get('is_link') and tree.get('accessible')
+            and tree.get('category') == 'unknown'):
+        auto_list.append((tree, 'unknown'))
+
     def collect(node, depth):
         if node['is_dir'] and not node['is_link'] and node['accessible']:
             if depth <= max_auto_depth:

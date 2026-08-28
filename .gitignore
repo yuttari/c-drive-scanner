@@ -12,3 +12,6 @@ server*.log
 node_modules/
 .venv/
 .DS_Store
+# 本地产物（导出报告与临时副本，勿入库）
+扫描结果导出.html
+*-副本.bat

@@ -136,6 +136,7 @@ scan_lock = threading.Lock()
 scan_state = {
     'scanning': False,
     'done': False,
+    'ai_done': False,       # AI 分析是否完成（success/fail 均为 True）
     'errored': False,
     'error': None,
     'progress': {'dirs': 0, 'files': 0},
@@ -196,6 +197,7 @@ def scan_worker(path, my_gen):
     scan_state['progress'] = {'dirs': 0, 'files': 0}
     scan_state['scanning'] = True
     scan_state['done'] = False
+    scan_state['ai_done'] = False
     scan_state['errored'] = False
     scan_state['error'] = None
     scan_state['started_at'] = time.time()
@@ -255,6 +257,8 @@ def scan_worker(path, my_gen):
             log("[AI] 分析完成")
         except Exception as e:
             log(f"⚠ AI 分析失败（不影响目录树/报告，可稍后重扫补全）：{type(e).__name__}: {e}")
+        finally:
+            scan_state['ai_done'] = True
         # 自动生成聚焦版 HTML 报告（小巧可直开），供整盘等超大扫描使用
         log("📄 正在生成聚焦版 HTML 报告...")
         rp = _make_report(tree, path)
@@ -339,6 +343,7 @@ def api_status():
     return jsonify({
         'scanning': scan_state['scanning'],
         'done': scan_state['done'],
+        'ai_done': scan_state['ai_done'],
         'errored': scan_state['errored'],
         'error': scan_state['error'],
         'progress': scan_state['progress'],
